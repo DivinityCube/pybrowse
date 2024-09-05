@@ -1,83 +1,62 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-from tkhtmlview import HTMLLabel
-import requests
+import sys
+from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets
 
-browser_version = "0.0.1"
 
-class Browser:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("PyBrowse")
-        self.root.geometry("800x600")
-        self.root.configure(bg='#e1e1e1')
-        self.menu_bar = tk.Menu(self.root)
-        self.root.config(menu=self.menu_bar)
-        help_menu = tk.Menu(self.menu_bar, tearoff=0)
-        help_menu.add_command(label="About", command=self.show_about)
-        self.menu_bar.add_cascade(label="Help", menu=help_menu)
-        self.default_html = "<h1>Welcome to PyBrowse</h1><p>Enter a URL above and click 'Go'!</p>"
-        self.url_frame = tk.Frame(self.root, bg='#d3d3d3', padx=10, pady=5)
-        self.url_frame.pack(fill='x')
-        self.url_entry = ttk.Entry(self.url_frame, width=80, font=('Arial', 12))
-        self.url_entry.pack(side='left', padx=5)
-        self.go_button = ttk.Button(self.url_frame, text="Go", command=self.load_url)
-        self.go_button.pack(side='left', padx=5)
-        self.back_button = ttk.Button(self.url_frame, text="Back", command=self.go_back)
-        self.back_button.pack(side='left', padx=5)
-        self.refresh_button = ttk.Button(self.url_frame, text="Refresh", command=self.refresh_page)
-        self.refresh_button.pack(side='left', padx=5)
-        self.content_frame = tk.Frame(self.root)
-        self.content_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        self.content_scrollbar = tk.Scrollbar(self.content_frame)
-        self.content_scrollbar.pack(side='right', fill='y')
-        self.html_display = HTMLLabel(self.content_frame, html=self.default_html, 
-                                      font=('Arial', 10), bg='#fff', relief='sunken')
-        self.html_display.pack(fill='both', expand=True)
-        self.html_display.fit_height()
-        self.html_display.bind("<Configure>", lambda e: self.content_scrollbar.set(0, 1))
-        self.html_display.config(yscrollcommand=self.content_scrollbar.set)
-        self.content_scrollbar.config(command=self.html_display.yview)
-        self.history = []
-        self.current_url = None
+class PyBrowse(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("PyBrowse - Advanced Web Browser")
+        self.setGeometry(100, 100, 1024, 768)
+        self.browser = QtWebEngineWidgets.QWebEngineView()
+        self.browser.setUrl(QtCore.QUrl("https://www.example.com"))
+        self.setCentralWidget(self.browser)
+        self.create_navigation_bar()
+        self.create_menu_bar()
 
-    def load_url(self):
-        """Fetch and load HTML content from a URL."""
-        url = self.url_entry.get()
+    def create_navigation_bar(self):
+        """Create the navigation bar with URL entry, back, reload, and go buttons."""
+        navigation_bar = QtWidgets.QToolBar("Navigation")
+        self.addToolBar(navigation_bar)
+        back_button = QtWidgets.QAction("Back", self)
+        back_button.triggered.connect(self.browser.back)
+        navigation_bar.addAction(back_button)
+        reload_button = QtWidgets.QAction("Reload", self)
+        reload_button.triggered.connect(self.browser.reload)
+        navigation_bar.addAction(reload_button)
+        self.url_bar = QtWidgets.QLineEdit()
+        self.url_bar.returnPressed.connect(self.navigate_to_url)
+        navigation_bar.addWidget(self.url_bar)
+        go_button = QtWidgets.QAction("Go", self)
+        go_button.triggered.connect(self.navigate_to_url)
+        navigation_bar.addAction(go_button)
+        self.browser.urlChanged.connect(self.update_url_bar)
+
+    def navigate_to_url(self):
+        """Load the URL entered in the URL bar."""
+        url = self.url_bar.text()
         if not url.startswith("http"):
             url = "http://" + url
+        self.browser.setUrl(QtCore.QUrl(url))
 
-        try:
-            response = requests.get(url)
-            response.raise_for_status()
-            html_content = response.text
-            self.html_display.set_html(html_content)
-            self.history.append(url)
-            self.current_url = url
+    def update_url_bar(self, q):
+        """Update the URL bar when the user navigates to a different page."""
+        self.url_bar.setText(q.toString())
 
-        except requests.exceptions.RequestException as e:
-            messagebox.showerror("Error", f"Failed to load URL: {url}\n\n{e}")
+    def create_menu_bar(self):
+        """Create the menu bar with a Help section and About dialog."""
+        menu_bar = self.menuBar()
+        help_menu = menu_bar.addMenu("Help")
+        about_action = QtWidgets.QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(about_action)
 
-    def go_back(self):
-        """Simulate going back in history."""
-        if len(self.history) > 1:
-            self.history.pop()  
-            previous_url = self.history[-1]
-            self.url_entry.delete(0, tk.END)
-            self.url_entry.insert(0, previous_url)
-            self.load_url()
+    def show_about_dialog(self):
+        """Show an About dialog with browser information."""
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.2")
 
-    def refresh_page(self):
-        """Reload the current page."""
-        if self.current_url:
-            self.url_entry.delete(0, tk.END)
-            self.url_entry.insert(0, self.current_url)
-            self.load_url()
-    
-    def show_about(self):
-        """Display the About dialog with browser version."""
-        messagebox.showinfo("About Simple Tkinter Browser", f"PyBrowse\nVersion: {browser_version}")
 
-root = tk.Tk()
-app = Browser(root)
-root.mainloop()
+if __name__ == "__main__":
+    app = QtWidgets.QApplication(sys.argv)
+    window = PyBrowse()
+    window.show()
+    sys.exit(app.exec_())
