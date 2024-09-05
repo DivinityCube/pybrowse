@@ -10,8 +10,10 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.browser = QtWebEngineWidgets.QWebEngineView()
         self.browser.setUrl(QtCore.QUrl("https://www.example.com"))
         self.setCentralWidget(self.browser)
+        self.history = []
         self.create_navigation_bar()
         self.create_menu_bar()
+        self.browser.urlChanged.connect(self.add_to_history)
 
     def create_navigation_bar(self):
         """Create the navigation bar with URL entry, back, reload, and go buttons."""
@@ -49,10 +51,20 @@ class PyBrowse(QtWidgets.QMainWindow):
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
+        self.history_menu = menu_bar.addMenu("History")
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.2")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.3")
+    
+    def add_to_history(self, url):
+        """Add the current URL to the history and update the History menu."""
+        url_str = url.toString()
+        if url_str not in self.history:
+            self.history.append(url_str)
+            history_action = QtWidgets.QAction(url_str, self)
+            history_action.triggered.connect(lambda checked, url=url_str: self.browser.setUrl(QtCore.QUrl(url)))
+            self.history_menu.addAction(history_action)
 
 
 if __name__ == "__main__":
