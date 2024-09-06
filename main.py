@@ -1,11 +1,16 @@
 import sys
+import json
+import os
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets
 
 
 class PyBrowse(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyBrowse - Advanced Web Browser")
+        self.bookmarks_file = "bookmarks.json"
+        self.bookmarks = []
+        self.load_bookmarks()
+        self.setWindowTitle("PyBrowse")
         self.setGeometry(100, 100, 1024, 768)
         self.browser = QtWebEngineWidgets.QWebEngineView()
         self.browser.setUrl(QtCore.QUrl("https://www.example.com"))
@@ -52,6 +57,10 @@ class PyBrowse(QtWidgets.QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
         self.history_menu = menu_bar.addMenu("History")
+        self.bookmarks_menu = menu_bar.addMenu("Bookmarks")
+        add_bookmark_action = QtWidgets.QAction("Add Bookmark", self)
+        add_bookmark_action.triggered.connect(self.add_bookmark)
+        self.bookmarks_menu.addAction(add_bookmark_action)
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
@@ -65,6 +74,38 @@ class PyBrowse(QtWidgets.QMainWindow):
             history_action = QtWidgets.QAction(url_str, self)
             history_action.triggered.connect(lambda checked, url=url_str: self.browser.setUrl(QtCore.QUrl(url)))
             self.history_menu.addAction(history_action)
+    
+    def add_bookmark(self):
+        """Add the current URL to the bookmarks and update the Bookmarks menu."""
+        current_url = self.browser.url().toString()
+        if current_url not in self.bookmarks:
+            self.bookmarks.append(current_url)
+            self.save_bookmarks()
+            self.load_bookmarks_menu()
+    
+    def load_bookmarks_menu(self):
+        """Load the saved bookmarks into the Bookmarks menu."""
+        actions = self.bookmarks_menu.actions()[2:] 
+        for action in actions:
+            self.bookmarks_menu.removeAction(action)
+        for bookmark in self.bookmarks:
+            bookmark_action = QtWidgets.QAction(bookmark, self)
+            bookmark_action.triggered.connect(lambda checked, url=bookmark: self.browser.setUrl(QtCore.QUrl(url)))
+            self.bookmarks_menu.addAction(bookmark_action)
+    
+    def save_bookmarks(self):
+        """Save the bookmarks to a JSON file."""
+        with open(self.bookmarks_file, 'w') as f:
+            json.dump(self.bookmarks, f)
+    
+    def load_bookmarks(self):
+        """Load bookmarks from a JSON file if it exists, or create it if not."""
+        if os.path.exists(self.bookmarks_file):
+            with open(self.bookmarks_file, 'r') as f:
+                self.bookmarks = json.load(f)
+        else:
+            self.bookmarks = []
+            self.save_bookmarks()
 
 
 if __name__ == "__main__":
