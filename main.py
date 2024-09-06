@@ -33,10 +33,31 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.url_bar = QtWidgets.QLineEdit()
         self.url_bar.returnPressed.connect(self.navigate_to_url)
         navigation_bar.addWidget(self.url_bar)
+        self.url_bar.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.url_bar.customContextMenuRequested.connect(self.show_context_menu)
         go_button = QtWidgets.QAction("Go", self)
         go_button.triggered.connect(self.navigate_to_url)
         navigation_bar.addAction(go_button)
         self.browser.urlChanged.connect(self.update_url_bar)
+
+    def show_context_menu(self, position):
+        """Display the context menu with Copy, Cut, and Paste actions."""
+        context_menu = QtWidgets.QMenu()
+        copy_action = context_menu.addAction("Copy")
+        cut_action = context_menu.addAction("Cut")
+        paste_action = context_menu.addAction("Paste")
+        select_all_action = context_menu.addAction("Select All")
+        undo_action = context_menu.addAction("Undo")
+        redo_action = context_menu.addAction("Redo")
+        clear_action = context_menu.addAction("Clear")
+        copy_action.triggered.connect(self.url_bar.copy)
+        cut_action.triggered.connect(self.url_bar.cut)
+        paste_action.triggered.connect(self.url_bar.paste)
+        select_all_action.triggered.connect(self.url_bar.selectAll)
+        undo_action.triggered.connect(self.url_bar.undo)
+        redo_action.triggered.connect(self.url_bar.redo)
+        clear_action.triggered.connect(self.url_bar.clear)
+        context_menu.exec_(self.url_bar.mapToGlobal(position))
 
     def navigate_to_url(self):
         """Load the URL entered in the URL bar."""
