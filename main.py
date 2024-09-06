@@ -11,19 +11,42 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.setUrl(QtCore.QUrl(url))
 
 
+class HistoryPage(QtWidgets.QWidget):
+    """A page to display browsing history."""
+    def __init__(self, history):
+        super().__init__()
+        layout = QtWidgets.QVBoxLayout()
+        self.history_label = QtWidgets.QLabel("Browsing History")
+        self.history_label.setAlignment(QtCore.Qt.AlignCenter)
+        layout.addWidget(self.history_label)
+        self.history_list = QtWidgets.QListWidget()
+        self.load_history(history)
+        layout.addWidget(self.history_list)
+
+        self.setLayout(layout)
+
+    def load_history(self, history):
+        """Load the history into the list widget."""
+        for url in history:
+            item = QtWidgets.QListWidgetItem(url)
+            self.history_list.addItem(item)
+
+
 class PyBrowse(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PyBrowse")
         self.setGeometry(100, 100, 1024, 768)
         self.bookmarks_file = "bookmarks.json"
+        self.history_file = "history.json"
         self.bookmarks = []
+        self.history = []
         self.load_bookmarks()
+        self.load_history()
         self.tabs = QtWidgets.QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.update_url_bar)
-        self.tabs.setStyleSheet("QTabBar::tab { width: 150px; }")
         self.setCentralWidget(self.tabs)
         self.create_navigation_bar()
         self.create_menu_bar()
@@ -48,6 +71,9 @@ class PyBrowse(QtWidgets.QMainWindow):
         new_tab_button = QtWidgets.QAction("New Tab", self)
         new_tab_button.triggered.connect(lambda: self.add_new_tab())
         navigation_bar.addAction(new_tab_button)
+        history_button = QtWidgets.QAction("History", self)
+        history_button.triggered.connect(self.open_history_page)
+        navigation_bar.addAction(history_button)
 
     def create_menu_bar(self):
         """Create the menu bar with Help and Bookmarks sections."""
@@ -65,7 +91,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.6")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 1.0.0")
 
     def add_new_tab(self, url="https://www.example.com"):
         """Add a new tab with the given URL."""
@@ -73,6 +99,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         i = self.tabs.addTab(new_tab, "New Tab")
         self.tabs.setCurrentIndex(i)
         new_tab.urlChanged.connect(self.update_url_bar)
+        new_tab.urlChanged.connect(self.add_to_history)
 
     def close_tab(self, index):
         """Close the tab at the given index."""
@@ -84,14 +111,21 @@ class PyBrowse(QtWidgets.QMainWindow):
         url = self.url_bar.text()
         if not url.startswith("http"):
             url = "http://" + url
-        self.tabs.currentWidget().setUrl(QtCore.QUrl(url))
+
+        current_tab = self.tabs.currentWidget()
+        if isinstance(current_tab, BrowserTab):
+            current_tab.setUrl(QtCore.QUrl(url))
 
     def update_url_bar(self):
         """Update the URL bar when the user navigates to a different page."""
         if self.tabs.count() > 0:
             current_tab = self.tabs.currentWidget()
-            if current_tab:
+
+            if isinstance(current_tab, BrowserTab):
                 self.url_bar.setText(current_tab.url().toString())
+            else:
+                # As it says on the tin, if it's not a browser tab (e.g., HistoryPage), clear the URL bar
+                self.url_bar.clear()
 
     def go_back(self):
         """Go back in the history of the current tab."""
@@ -110,6 +144,19 @@ class PyBrowse(QtWidgets.QMainWindow):
             self.bookmarks.append(current_url)
             self.save_bookmarks()
             self.load_bookmarks_menu()
+
+    def open_history_page(self):
+        """Open a new tab with the browsing history."""
+        history_tab = HistoryPage(self.history)
+        i = self.tabs.addTab(history_tab, "History")
+        self.tabs.setCurrentIndex(i)
+
+    def add_to_history(self, url):
+        """Add the current URL to the browsing history and save it to a file."""
+        url_str = url.toString()
+        if url_str not in self.history:
+            self.history.append(url_str)
+            self.save_history()
 
     def load_bookmarks_menu(self):
         """Load the saved bookmarks into the Bookmarks menu."""
@@ -133,6 +180,19 @@ class PyBrowse(QtWidgets.QMainWindow):
                 self.bookmarks = json.load(f)
         else:
             self.bookmarks = []
+
+    def save_history(self):
+        """Save the history to a JSON file."""
+        with open(self.history_file, 'w') as f:
+            json.dump(self.history, f)
+
+    def load_history(self):
+        """Load history from a JSON file if it exists."""
+        if os.path.exists(self.history_file):
+            with open(self.history_file, 'r') as f:
+                self.history = json.load(f)
+        else:
+            self.history = []
 
 
 if __name__ == "__main__":
