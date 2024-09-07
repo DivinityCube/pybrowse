@@ -2,6 +2,8 @@ import sys
 import json
 import os
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
+from PyQt5.QtWebEngineWidgets import QWebEngineProfile
+from PyQt5.QtCore import QUrl
 
 # TODO: This new tab overhaul is very sloppy. I don't feel like this code is super polished and there are probably some gaping holes I'm too tired to fix, or even spot. Maybe in some future version I'll go over this code again
 class ScrollableTabBar(QtWidgets.QTabBar):
@@ -11,12 +13,22 @@ class ScrollableTabBar(QtWidgets.QTabBar):
         self.setElideMode(QtCore.Qt.ElideRight)
         self.setUsesScrollButtons(True)
         self.setMovable(True)
+        self.setExpanding(False)
 
     def tabSizeHint(self, index):
         size = super().tabSizeHint(index)
-        if self.width() < self.sizeHint().width():
-            return QtCore.QSize(int(self.width() / self.count()), size.height())
+        if self.count() > 0:
+            available_width = self.width()
+            total_width = sum(self.tabRect(i).width() for i in range(self.count()))
+            if total_width > available_width:
+                return size
+            else:
+                extra_width = (available_width - total_width) // self.count()
+                return QtCore.QSize(size.width() + extra_width, size.height())
         return size
+    
+    def minimumTabSizeHint(self, index):
+        return QtCore.QSize(50, super().minimumTabSizeHint(index).height())
 
 class TabWidget(QtWidgets.QTabWidget):
     def __init__(self, parent=None):
@@ -108,7 +120,7 @@ class DebugConsole(QtWidgets.QWidget):
 
 class BrowserTab(QtWebEngineWidgets.QWebEngineView):
     """A single browser tab, which extends QWebEngineView."""
-    def __init__(self, url="https://www.example.com", parent=None):
+    def __init__(self, url="https://www.google.com", parent=None):
         super().__init__(parent)
         self.custom_page = CustomWebEnginePage(self)
         self.setPage(self.custom_page)
@@ -116,6 +128,7 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
+        self.source_window = None
     
     def build_context_menu(self, menu, position, link_url):
         if link_url:
@@ -148,12 +161,22 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.page().toHtml(self.show_source_window)
     
     def show_source_window(self, html):
-        source_window = QtWidgets.QTextEdit(None)
-        source_window.setWindowTitle("Page Source")
-        source_window.setReadOnly(True)
-        source_window.setPlainText(html)
-        source_window.resize(800, 600)
-        source_window.show()
+        if self.source_window is None:
+            self.source_window = QtWidgets.QTextEdit(None)
+            self.source_window.setWindowTitle("Page Source")
+            self.source_window.setReadOnly(True)
+            self.source_window.resize(800, 600)
+            font = QtGui.QFont("Courier", 10)
+            self.source_window.setFont(font)
+            self.source_window.closeEvent = lambda event: self.reset_source_window(event)
+        
+        self.source_window.setPlainText(html)
+        self.source_window.show()
+        self.source_window.raise_()
+    
+    def reset_source_window(self, event):
+        self.source_window = None
+        event.accept()
     
     def save_page(self):
         dialog = QtWidgets.QFileDialog(self)
@@ -172,6 +195,20 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
                     debug_console.log(message)
                     break
 
+class PrivateBrowserTab(BrowserTab):
+    def __init__(self, url="https://www.google.com", parent=None):
+        super().__init__(url, parent)
+        self.private_profile = QWebEngineProfile()
+        self.private_profile.setOffTheRecord(True)
+        self.private_page = CustomWebEnginePage(self.private_profile, self)
+        self.setPage(self.private_page)
+        self.setUrl(QUrl(url))
+    
+    def closeEvent(self, event):
+        self.private_profile.clearAllVisitedLinks()
+        self.private_profile.clearHttpCache()
+        self.private_profile.cookieStore().deleteAllCookies()
+        super().closeEvent(event)
 
 class HistoryPage(QtWidgets.QWidget):
     """A page to display browsing history."""
@@ -209,36 +246,50 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.setCentralWidget(self.tabs)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.update_url_bar)
-        self.setCentralWidget(self.tabs)
         self.create_navigation_bar()
         self.create_menu_bar()
-        self.add_new_tab("https://www.example.com")
+        self.is_private_mode = False
+        self.create_private_mode_toggle()
+        self.add_new_tab("https://www.google.com")
+    
+    def create_private_mode_toggle(self):
+        private_mode_action = QtWidgets.QAction("Private Mode", self)
+        private_mode_action.setCheckable(True)
+        private_mode_action.toggled.connect(self.toggle_private_mode)
+        self.navigation_bar.addAction(private_mode_action)
+
+    def toggle_private_mode(self, enabled):
+        self.is_private_mode = enabled
+        if enabled:
+            self.setWindowTitle("PyBrowse (Private Mode)")
+        else:
+            self.setWindowTitle("PyBrowse")
 
     def create_navigation_bar(self):
         """Create the navigation bar with URL entry, back, reload, go buttons, and new tab button."""
-        navigation_bar = QtWidgets.QToolBar("Navigation")
-        self.addToolBar(navigation_bar)
+        self.navigation_bar = QtWidgets.QToolBar("Navigation")
+        self.addToolBar(self.navigation_bar)
         back_button = QtWidgets.QAction("Back", self)
         back_button.triggered.connect(self.go_back)
-        navigation_bar.addAction(back_button)
+        self.navigation_bar.addAction(back_button)
         reload_button = QtWidgets.QAction("Reload", self)
         reload_button.triggered.connect(self.reload_page)
-        navigation_bar.addAction(reload_button)
+        self.navigation_bar.addAction(reload_button)
         self.url_bar = QtWidgets.QLineEdit()
         self.url_bar.returnPressed.connect(self.navigate_to_url)
-        navigation_bar.addWidget(self.url_bar)
+        self.navigation_bar.addWidget(self.url_bar)
         go_button = QtWidgets.QAction("Go", self)
         go_button.triggered.connect(self.navigate_to_url)
-        navigation_bar.addAction(go_button)
+        self.navigation_bar.addAction(go_button)
         new_tab_button = QtWidgets.QAction("New Tab", self)
         new_tab_button.triggered.connect(lambda: self.add_new_tab())
-        navigation_bar.addAction(new_tab_button)
+        self.navigation_bar.addAction(new_tab_button)
         dev_tools_button = QtWidgets.QAction("Debug Menu", self)
         dev_tools_button.triggered.connect(self.open_dev_tools)
-        navigation_bar.addAction(dev_tools_button)
+        self.navigation_bar.addAction(dev_tools_button)
         history_button = QtWidgets.QAction("History", self)
         history_button.triggered.connect(self.open_history_page)
-        navigation_bar.addAction(history_button)
+        self.navigation_bar.addAction(history_button)
 
     def create_menu_bar(self):
         """Create the menu bar with Help and Bookmarks sections."""
@@ -256,15 +307,21 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.9")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.0")
 
-    def add_new_tab(self, url="https://www.example.com"):
-        new_tab = BrowserTab(url)
+    def add_new_tab(self, url="https://www.google.com"):
+        if self.is_private_mode:
+            new_tab = PrivateBrowserTab(url)
+        else:
+            new_tab = BrowserTab(url)
+        
         index = self.tabs.addTab(new_tab, "New Tab")
         self.tabs.setCurrentIndex(index)
         new_tab.titleChanged.connect(lambda title, tab=new_tab: self.update_tab_title(tab, title))
         new_tab.urlChanged.connect(self.update_url_bar)
-        new_tab.urlChanged.connect(self.add_to_history)
+        
+        if not self.is_private_mode:
+            new_tab.urlChanged.connect(self.add_to_history)
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
@@ -320,11 +377,11 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.tabs.setCurrentIndex(i)
 
     def add_to_history(self, url):
-        """Add the current URL to the browsing history and save it to a file."""
-        url_str = url.toString()
-        if url_str not in self.history:
-            self.history.append(url_str)
-            self.save_history()
+        if not self.is_private_mode:
+            url_str = url.toString()
+            if url_str not in self.history:
+                self.history.append(url_str)
+                self.save_history()
 
     # FIXME: The debug menu is known internally as open_dev_tools (or just DevTools in general), but it should really be something like open_debug_menu. I'll change this soon.
     def open_dev_tools(self):
