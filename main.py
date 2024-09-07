@@ -239,6 +239,8 @@ class PyBrowse(QtWidgets.QMainWindow):
         central_widget = QtWidgets.QWidget(self)
         self.setCentralWidget(central_widget)
         layout = QtWidgets.QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.central_widget = central_widget
         self.tabs = TabWidget(self)
         layout.addWidget(self.tabs)
         self.create_navigation_bar()
@@ -247,6 +249,8 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.history_file = "history.json"
         self.bookmarks = []
         self.history = []
+        self.is_fullscreen = False
+        self.create_fullscreen_toggle()
         self.load_bookmarks()
         self.load_history()
         self.tabs.tabCloseRequested.connect(self.close_tab)
@@ -255,6 +259,9 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.is_private_mode = False
         self.create_private_mode_toggle()
         self.add_new_tab("https://www.google.com")
+    
+    def update_frame(self):
+        self.repaint()
     
     def create_private_mode_toggle(self):
         private_mode_action = QtWidgets.QAction("Private Mode", self)
@@ -294,6 +301,22 @@ class PyBrowse(QtWidgets.QMainWindow):
         history_button = QtWidgets.QAction("History", self)
         history_button.triggered.connect(self.open_history_page)
         self.navigation_bar.addAction(history_button)
+        fullscreen_button = QtWidgets.QAction("Fullscreen", self)
+        fullscreen_button.triggered.connect(self.toggle_fullscreen)
+        self.navigation_bar.addAction(fullscreen_button)
+
+    def create_fullscreen_toggle(self):
+        self.fullscreen_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("F11"), self)
+        self.fullscreen_shortcut.activated.connect(self.toggle_fullscreen)
+
+    def toggle_fullscreen(self):
+        if not self.is_fullscreen:
+            self.showFullScreen()
+            self.is_fullscreen = True
+        else:
+            self.showNormal()
+            self.is_fullscreen = False
+        self.central_widget.setGeometry(self.rect())
 
     def create_menu_bar(self):
         """Create the menu bar with Help and Bookmarks sections."""
@@ -311,9 +334,10 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.1")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.2")
 
     def add_new_tab(self, url="https://www.google.com"):
+        self.setUpdatesEnabled(False)
         if self.is_private_mode:
             new_tab = PrivateBrowserTab(url)
         else:
@@ -326,6 +350,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         
         if not self.is_private_mode:
             new_tab.urlChanged.connect(self.add_to_history)
+        self.setUpdatesEnabled(True)
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
@@ -438,6 +463,15 @@ class PyBrowse(QtWidgets.QMainWindow):
         else:
             self.history = []
 
+    def keyPressEvent(self, event):
+        if event.key() == QtCore.Qt.Key_Escape and self.is_fullscreen:
+            self.toggle_fullscreen()
+        else:
+            super().keyPressEvent(event)
+    
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.central_widget.setGeometry(self.rect())
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
