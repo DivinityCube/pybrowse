@@ -1,9 +1,46 @@
 import sys
+import re
+import requests
+from urllib.parse import quote
 import json
 import os
+from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
-from PyQt5.QtWebEngineWidgets import QWebEngineProfile
-from PyQt5.QtCore import QUrl
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
+from PyQt5.QtCore import QUrl, QTimer
+from PyQt5.QtWidgets import QMainWindow, QTabWidget
+
+class AdBlocker(QWebEngineUrlRequestInterceptor):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.ad_hosts = set()
+        self.load_ad_hosts()
+
+    # THANK YOU, EasyList developer(s)!
+    def load_ad_hosts(self):
+        url = "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_adservers.txt"
+        
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                for line in response.text.splitlines():
+                    if line.startswith('||') and '^' in line:
+                        domain = line.split('^')[0][2:]
+                        self.ad_hosts.add(domain)
+            else:
+                print(f"Failed to fetch ad list. Status code: {response.status_code}")
+        except requests.RequestException as e:
+            print(f"Error fetching ad list: {e}")
+            self.ad_hosts.update([
+                'ads.google.com',
+                'tracking.google.com',
+                'analytics.google.com',
+            ])
+    
+    def interceptRequest(self, info):
+        url = info.requestUrl()
+        if any(url.host().endswith(host) for host in self.ad_hosts):
+            info.block(True)
 
 # TODO: This new tab overhaul is very sloppy. I don't feel like this code is super polished and there are probably some gaping holes I'm too tired to fix, or even spot. Maybe in some future version I'll go over this code again
 class ScrollableTabBar(QtWidgets.QTabBar):
@@ -122,7 +159,16 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
     """A single browser tab, which extends QWebEngineView."""
     def __init__(self, url="https://www.google.com", parent=None):
         super().__init__(parent)
+        self.ad_blocker = AdBlocker(self)
+        self.profile = QWebEngineProfile()
+        self.profile.setUrlRequestInterceptor(self.ad_blocker)
+        self.custom_page = CustomWebEnginePage(self.profile, self)
+        self.setPage(self.custom_page)
+        self.setUrl(QtCore.QUrl(url))
         self.custom_page = CustomWebEnginePage(self)
+        self.web_page = QWebEnginePage(self.profile, self)
+        self.setPage(self.web_page)
+        self.setUrl(QUrl(url))
         self.setPage(self.custom_page)
         self.setUrl(QtCore.QUrl(url))
         self.reader_mode_active = False
@@ -230,6 +276,15 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         else:
             self.reload()
             self.reader_mode_active = False
+    
+    # To stop memory leaks and such
+    def closeEvent(self, event):
+        self.web_page.deleteLater()
+        self.profile.setUrlRequestInterceptor(None)
+        self.web_page.setParent(None)
+        self.profile.deleteLater()
+        super().closeEvent(event)
+
 
 class PrivateBrowserTab(BrowserTab):
     def __init__(self, url="https://www.google.com", parent=None):
@@ -294,6 +349,9 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.create_menu_bar()
         self.is_private_mode = False
         self.reader_mode_active = False
+        self.cleanup_timer = QTimer(self)
+        self.cleanup_timer.setSingleShot(True)
+        self.cleanup_timer.timeout.connect(self.delayed_cleanup)
         self.create_private_mode_toggle()
         self.add_new_tab("https://www.google.com")
     
@@ -374,7 +432,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.3")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.4")
 
     def add_new_tab(self, url="https://www.google.com"):
         self.setUpdatesEnabled(False)
@@ -403,14 +461,20 @@ class PyBrowse(QtWidgets.QMainWindow):
             self.tabs.removeTab(index)
 
     def navigate_to_url(self):
-        """Load the URL entered in the URL bar into the current tab."""
-        url = self.url_bar.text()
-        if not url.startswith("http"):
-            url = "http://" + url
+        """Load the URL entered in the URL bar into the current tab or perform a search."""
+        query = self.url_bar.text().strip()
+        
+        # Basically it's checking to see if it's a URL
+        if re.match(r'^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$', query):
+            if not query.startswith(('http://', 'https://')):
+                query = 'http://' + query
+        else:
+            query = f'https://www.google.com/search?q={quote(query)}'
 
         current_tab = self.tabs.currentWidget()
         if isinstance(current_tab, BrowserTab):
-            current_tab.setUrl(QtCore.QUrl(url))
+            current_tab.setUrl(QtCore.QUrl(query))
+
 
     def update_url_bar(self):
         """Update the URL bar when the user navigates to a different page."""
@@ -517,6 +581,25 @@ class PyBrowse(QtWidgets.QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.central_widget.setGeometry(self.rect())
+    
+    # To also prevent memory leaks and such 
+    def closeEvent(self, event):
+        self.start_cleanup()
+        super().closeEvent(event)
+
+    def start_cleanup(self):
+        while self.tabs.count() > 0:
+            tab = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            if isinstance(tab, BrowserTab):
+                tab.close()
+                tab.deleteLater()
+        QTimer.singleShot(100, self.delayed_cleanup)
+
+    def delayed_cleanup(self):
+        self.tabs.deleteLater()
+        self.close()
+
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
