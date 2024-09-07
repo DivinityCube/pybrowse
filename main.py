@@ -26,8 +26,6 @@ class TabWidget(QtWidgets.QTabWidget):
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self.close_tab)
         self.overflow_menu = QtWidgets.QMenu(self)
-        self.tabBar().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
-        self.tabBar().customContextMenuRequested.connect(self.show_overflow_menu)
 
     def close_tab(self, index):
         if self.count() > 1:
@@ -115,7 +113,55 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.custom_page = CustomWebEnginePage(self)
         self.setPage(self.custom_page)
         self.setUrl(QtCore.QUrl(url))
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
+    
+    def build_context_menu(self, menu, position, link_url):
+        if link_url:
+            menu.addAction("Open Link in New Tab", lambda: self.open_link_in_new_tab(QtCore.QUrl(link_url)))
+            menu.addAction("Copy Link Address", lambda: QtWidgets.QApplication.clipboard().setText(link_url))
+        menu.addSeparator()
+        menu.addAction("Back", self.back)
+        menu.addAction("Forward", self.forward)
+        menu.addAction("Reload", self.reload)
+        menu.addSeparator()
+        menu.addAction("View Page Source", self.view_page_source)
+        menu.addAction("Save Page", self.save_page)
+        menu.exec_(self.mapToGlobal(position))
+    
+    def show_context_menu(self, position):
+        menu = QtWidgets.QMenu(self)
+        js_code = """
+            var element = document.elementFromPoint(%d, %d);
+            var link = element ? element.closest('a') : null;
+            link ? link.href : null;
+            """ % (position.x(), position.y())
+        self.page().runJavaScript(js_code, lambda link_url: self.build_context_menu(menu, position, link_url))
+    
+    def open_link_in_new_tab(self, url):
+        main_window = self.window()
+        if hasattr(main_window, 'add_new_tab'):
+            main_window.add_new_tab(url.toString())
+    
+    def view_page_source(self):
+        self.page().toHtml(self.show_source_window)
+    
+    def show_source_window(self, html):
+        source_window = QtWidgets.QTextEdit(None)
+        source_window.setWindowTitle("Page Source")
+        source_window.setReadOnly(True)
+        source_window.setPlainText(html)
+        source_window.resize(800, 600)
+        source_window.show()
+    
+    def save_page(self):
+        dialog = QtWidgets.QFileDialog(self)
+        dialog.setAcceptMode(QtWidgets.QFileDialog.AcceptSave)
+        dialog.setNameFilter("Web Page, Complete (*.html)")
+        if dialog.exec_() == QtWidgets.QFileDialog.Accepted:
+            path = dialog.selectedFiles()[0]
+            self.page().save(path, QtWebEngineWidgets.QWebEngineDownloadItem.CompleteHtmlSaveFormat)
         
     def handle_console_message(self, message):
         main_window = self.window()
@@ -210,17 +256,13 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 1.0.0")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.0.9")
 
     def add_new_tab(self, url="https://www.example.com"):
         new_tab = BrowserTab(url)
         index = self.tabs.addTab(new_tab, "New Tab")
         self.tabs.setCurrentIndex(index)
-
-        # Set the tab text to the page title when it changes
         new_tab.titleChanged.connect(lambda title, tab=new_tab: self.update_tab_title(tab, title))
-
-        # Connect the urlChanged signal to update the URL bar and save history
         new_tab.urlChanged.connect(self.update_url_bar)
         new_tab.urlChanged.connect(self.add_to_history)
     
