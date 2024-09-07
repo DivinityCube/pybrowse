@@ -125,6 +125,7 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.custom_page = CustomWebEnginePage(self)
         self.setPage(self.custom_page)
         self.setUrl(QtCore.QUrl(url))
+        self.reader_mode_active = False
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
@@ -169,7 +170,6 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
             font = QtGui.QFont("Courier", 10)
             self.source_window.setFont(font)
             self.source_window.closeEvent = lambda event: self.reset_source_window(event)
-        
         self.source_window.setPlainText(html)
         self.source_window.show()
         self.source_window.raise_()
@@ -194,6 +194,42 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
                     debug_console = main_window.tabs.widget(i)
                     debug_console.log(message)
                     break
+    
+    def toggle_reader_mode(self):
+        if not self.reader_mode_active:
+            # Yes, I'm using Mozilla's Readability library into the webpage.
+            js_code = """
+            (function() {
+                // Dynamically load the Readability library
+                var script = document.createElement('script');
+                script.src = 'https://cdn.jsdelivr.net/npm/@mozilla/readability@0.4.4/Readability.js';
+                script.onload = function() {
+                    var article = new Readability(document).parse();
+                    if (article) {
+                        // Replace the document content with the readable version
+                        document.body.innerHTML = '<h1>' + article.title + '</h1>' + article.content;
+
+                        // Add some basic reader mode styles
+                        var style = document.createElement('style');
+                        style.innerHTML = `
+                            body { font-family: Arial, sans-serif; font-size: 18px; line-height: 1.6; background-color: #f5f5f5; color: #333; margin: 0 auto; max-width: 800px; padding: 20px; }
+                            h1 { font-size: 2em; font-weight: bold; }
+                            img { max-width: 100%; height: auto; }
+                            p { margin-bottom: 20px; }
+                        `;
+                        document.head.appendChild(style);
+                    } else {
+                        alert('Failed to extract readable content.');
+                    }
+                };
+                document.head.appendChild(script);
+            })();
+            """
+            self.page().runJavaScript(js_code)
+            self.reader_mode_active = True
+        else:
+            self.reload()
+            self.reader_mode_active = False
 
 class PrivateBrowserTab(BrowserTab):
     def __init__(self, url="https://www.google.com", parent=None):
@@ -257,6 +293,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.tabs.currentChanged.connect(self.update_url_bar)
         self.create_menu_bar()
         self.is_private_mode = False
+        self.reader_mode_active = False
         self.create_private_mode_toggle()
         self.add_new_tab("https://www.google.com")
     
@@ -295,6 +332,9 @@ class PyBrowse(QtWidgets.QMainWindow):
         new_tab_button = QtWidgets.QAction("New Tab", self)
         new_tab_button.triggered.connect(lambda: self.add_new_tab())
         self.navigation_bar.addAction(new_tab_button)
+        reader_mode_button = QtWidgets.QAction("Reader Mode", self)
+        reader_mode_button.triggered.connect(self.toggle_reader_mode)
+        self.navigation_bar.addAction(reader_mode_button)
         dev_tools_button = QtWidgets.QAction("Debug Menu", self)
         dev_tools_button.triggered.connect(self.open_dev_tools)
         self.navigation_bar.addAction(dev_tools_button)
@@ -334,7 +374,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.2")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.3")
 
     def add_new_tab(self, url="https://www.google.com"):
         self.setUpdatesEnabled(False)
@@ -412,6 +452,11 @@ class PyBrowse(QtWidgets.QMainWindow):
                 self.history.append(url_str)
                 self.save_history()
 
+    def toggle_reader_mode(self):
+        current_tab = self.tabs.currentWidget()
+        if isinstance(current_tab, BrowserTab):
+            current_tab.toggle_reader_mode()
+    
     # FIXME: The debug menu is known internally as open_dev_tools (or just DevTools in general), but it should really be something like open_debug_menu. I'll change this soon.
     def open_dev_tools(self):
         """Open an enhanced debug console in a new tab."""
