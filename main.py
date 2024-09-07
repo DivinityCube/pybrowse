@@ -243,7 +243,7 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
     
     def toggle_reader_mode(self):
         if not self.reader_mode_active:
-            # Yes, I'm using Mozilla's Readability library into the webpage.
+            # Yes, I'm using Mozilla's Readability library for the Reader.
             js_code = """
             (function() {
                 // Dynamically load the Readability library
@@ -432,7 +432,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.4")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.5")
 
     def add_new_tab(self, url="https://www.google.com"):
         self.setUpdatesEnabled(False)
@@ -464,7 +464,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         """Load the URL entered in the URL bar into the current tab or perform a search."""
         query = self.url_bar.text().strip()
         
-        # Basically it's checking to see if it's a URL
+        # Basically this is checking to see if it's a URL
         if re.match(r'^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$', query):
             if not query.startswith(('http://', 'https://')):
                 query = 'http://' + query
