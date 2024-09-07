@@ -236,17 +236,21 @@ class PyBrowse(QtWidgets.QMainWindow):
         super().__init__()
         self.setWindowTitle("PyBrowse")
         self.setGeometry(100, 100, 1024, 768)
+        central_widget = QtWidgets.QWidget(self)
+        self.setCentralWidget(central_widget)
+        layout = QtWidgets.QVBoxLayout(central_widget)
+        self.tabs = TabWidget(self)
+        layout.addWidget(self.tabs)
+        self.create_navigation_bar()
+        layout.addWidget(self.navigation_bar)
         self.bookmarks_file = "bookmarks.json"
         self.history_file = "history.json"
         self.bookmarks = []
         self.history = []
         self.load_bookmarks()
         self.load_history()
-        self.tabs = TabWidget(self)
-        self.setCentralWidget(self.tabs)
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.update_url_bar)
-        self.create_navigation_bar()
         self.create_menu_bar()
         self.is_private_mode = False
         self.create_private_mode_toggle()
@@ -268,7 +272,7 @@ class PyBrowse(QtWidgets.QMainWindow):
     def create_navigation_bar(self):
         """Create the navigation bar with URL entry, back, reload, go buttons, and new tab button."""
         self.navigation_bar = QtWidgets.QToolBar("Navigation")
-        self.addToolBar(self.navigation_bar)
+        self.navigation_bar.setMovable(False)
         back_button = QtWidgets.QAction("Back", self)
         back_button.triggered.connect(self.go_back)
         self.navigation_bar.addAction(back_button)
@@ -307,7 +311,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.0")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.1")
 
     def add_new_tab(self, url="https://www.google.com"):
         if self.is_private_mode:
