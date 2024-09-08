@@ -1,0 +1,14 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="back.png">icons/back.png</file>
+        <file alias="forward.png">icons/forward.png</file>
+        <file alias="reload.png">icons/reload.png</file>
+        <file alias="go.png">icons/go.png</file>
+        <file alias="new_tab.png">icons/new_tab.png</file>
+        <file alias="reader_mode.png">icons/reader_mode.png</file>
+        <file alias="dev_tools.png">icons/dev_tools.png</file>
+        <file alias="history.png">icons/history.png</file>
+        <file alias="fullscreen.png">icons/fullscreen.png</file>
+    </qresource>
+</RCC>

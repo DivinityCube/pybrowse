@@ -8,7 +8,8 @@ from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
 from PyQt5.QtCore import QUrl, QTimer
-from PyQt5.QtWidgets import QMainWindow, QTabWidget
+from PyQt5.QtWidgets import QMainWindow, QTabWidget, QAction, QFileDialog, QStyleFactory
+from PyQt5.QtGui import QIcon
 
 class AccessibilityPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -21,6 +22,12 @@ class AccessibilityPage(QtWidgets.QWidget):
         title.setAlignment(QtCore.Qt.AlignCenter)
         title.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(title)
+        self.high_contrast_checkbox = QtWidgets.QCheckBox("High Contrast Mode")
+        self.high_contrast_checkbox.stateChanged.connect(self.toggle_high_contrast)
+        layout.addWidget(self.high_contrast_checkbox)
+        self.tts_checkbox = QtWidgets.QCheckBox("Enable Text-to-Speech")
+        self.tts_checkbox.stateChanged.connect(self.toggle_tts)
+        layout.addWidget(self.tts_checkbox)
         scroll_area = QtWidgets.QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_widget = QtWidgets.QWidget()
@@ -58,6 +65,20 @@ class AccessibilityPage(QtWidgets.QWidget):
 
         scroll_area.setWidget(scroll_widget)
         layout.addWidget(scroll_area)
+    
+    def toggle_high_contrast(self, state):
+        if state == QtCore.Qt.Checked:
+            self.window().setStyleSheet("""
+                QWidget { background-color: black; color: white; }
+                QLineEdit { background-color: white; color: black; }
+                QPushButton { background-color: white; color: black; }
+            """)
+        else:
+            self.window().setStyleSheet("")
+    
+    def toggle_tts(self, state):
+        print("Text-to-speech toggled:", state == QtCore.Qt.Checked)
+
 
     def add_section(self, layout, title, items):
         section_title = QtWidgets.QLabel(title)
@@ -73,6 +94,20 @@ class AccessibilityPage(QtWidgets.QWidget):
             layout.addWidget(label)
 
         layout.addSpacing(10)
+
+class DownloadManager(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        self.download_list = QtWidgets.QListWidget()
+        layout.addWidget(self.download_list)
+
+    def add_download(self, url):
+        item = QtWidgets.QListWidgetItem(f"Downloading: {url}")
+        self.download_list.addItem(item)
 
 class AdBlocker(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
@@ -418,6 +453,8 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.cleanup_timer.timeout.connect(self.delayed_cleanup)
         self.create_private_mode_toggle()
         self.add_new_tab("https://www.google.com")
+        self.download_manager = DownloadManager()
+        self.tabs.addTab(self.download_manager, "Downloads")
     
     def update_frame(self):
         self.repaint()
@@ -439,38 +476,86 @@ class PyBrowse(QtWidgets.QMainWindow):
         accessibility_page = AccessibilityPage(self)
         i = self.tabs.addTab(accessibility_page, "Accessibility")
         self.tabs.setCurrentIndex(i)
+    
+    def set_application_style(self):
+        QtWidgets.QApplication.setStyle(QStyleFactory.create("Fusion"))
+        dark_palette = QtGui.QPalette()
+        dark_palette.setColor(QtGui.QPalette.Window, QtGui.QColor(53, 53, 53))
+        dark_palette.setColor(QtGui.QPalette.WindowText, QtCore.Qt.white)
+        dark_palette.setColor(QtGui.QPalette.Base, QtGui.QColor(25, 25, 25))
+        dark_palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(53, 53, 53))
+        dark_palette.setColor(QtGui.QPalette.ToolTipBase, QtCore.Qt.white)
+        dark_palette.setColor(QtGui.QPalette.ToolTipText, QtCore.Qt.white)
+        dark_palette.setColor(QtGui.QPalette.Text, QtCore.Qt.white)
+        dark_palette.setColor(QtGui.QPalette.Button, QtGui.QColor(53, 53, 53))
+        dark_palette.setColor(QtGui.QPalette.ButtonText, QtCore.Qt.white)
+        dark_palette.setColor(QtGui.QPalette.BrightText, QtCore.Qt.red)
+        dark_palette.setColor(QtGui.QPalette.Link, QtGui.QColor(42, 130, 218))
+        dark_palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(42, 130, 218))
+        dark_palette.setColor(QtGui.QPalette.HighlightedText, QtCore.Qt.black)
+        QtWidgets.QApplication.setPalette(dark_palette)
+        self.setStyleSheet("""
+            QToolBar {
+                background-color: #2b2b2b;
+                border: none;
+                padding: 5px;
+            }
+            QToolBar QToolButton {
+                background-color: transparent;
+                border: none;
+                border-radius: 3px;
+                padding: 5px;
+            }
+            QToolBar QToolButton:hover {
+                background-color: #3a3a3a;
+            }
+            QToolBar QLineEdit {
+                background-color: #1e1e1e;
+                border: 1px solid #3a3a3a;
+                border-radius: 3px;
+                color: white;
+                padding: 3px;
+            }
+        """)
 
     def create_navigation_bar(self):
         """Create the navigation bar with URL entry, back, reload, go buttons, and new tab button."""
         self.navigation_bar = QtWidgets.QToolBar("Navigation")
         self.navigation_bar.setMovable(False)
-        back_button = QtWidgets.QAction("Back", self)
+        back_button = QAction(QIcon.fromTheme("go-previous", QIcon(":/icons/back.png")), "Back", self)
         back_button.triggered.connect(self.go_back)
         self.navigation_bar.addAction(back_button)
-        reload_button = QtWidgets.QAction("Reload", self)
+        forward_button = QAction(QIcon.fromTheme("go-next", QIcon(":/icons/forward.png")), "Forward", self)
+        forward_button.triggered.connect(self.go_forward)
+        self.navigation_bar.addAction(forward_button)
+        reload_button = QAction(QIcon.fromTheme("view-refresh", QIcon(":/icons/reload.png")), "Reload", self)
         reload_button.triggered.connect(self.reload_page)
         self.navigation_bar.addAction(reload_button)
         self.url_bar = QtWidgets.QLineEdit()
         self.url_bar.returnPressed.connect(self.navigate_to_url)
         self.navigation_bar.addWidget(self.url_bar)
-        go_button = QtWidgets.QAction("Go", self)
+        go_button = QAction(QIcon.fromTheme("go-jump", QIcon(":/icons/go.png")), "Go", self)
         go_button.triggered.connect(self.navigate_to_url)
         self.navigation_bar.addAction(go_button)
-        new_tab_button = QtWidgets.QAction("New Tab", self)
+        new_tab_button = QAction(QIcon.fromTheme("tab-new", QIcon(":/icons/new_tab.png")), "New Tab", self)
         new_tab_button.triggered.connect(lambda: self.add_new_tab())
         self.navigation_bar.addAction(new_tab_button)
-        reader_mode_button = QtWidgets.QAction("Reader Mode", self)
+        reader_mode_button = QAction(QIcon.fromTheme("format-justify-fill", QIcon(":/icons/reader_mode.png")), "Reader Mode", self)
         reader_mode_button.triggered.connect(self.toggle_reader_mode)
         self.navigation_bar.addAction(reader_mode_button)
-        dev_tools_button = QtWidgets.QAction("Debug Menu", self)
+        dev_tools_button = QAction(QIcon.fromTheme("applications-development", QIcon(":/icons/dev_tools.png")), "Debug Menu", self)
         dev_tools_button.triggered.connect(self.open_dev_tools)
         self.navigation_bar.addAction(dev_tools_button)
-        history_button = QtWidgets.QAction("History", self)
+        history_button = QAction(QIcon.fromTheme("document-open-recent", QIcon(":/icons/history.png")), "History", self)
         history_button.triggered.connect(self.open_history_page)
         self.navigation_bar.addAction(history_button)
-        fullscreen_button = QtWidgets.QAction("Fullscreen", self)
+        fullscreen_button = QAction(QIcon.fromTheme("view-fullscreen", QIcon(":/icons/fullscreen.png")), "Fullscreen", self)
         fullscreen_button.triggered.connect(self.toggle_fullscreen)
         self.navigation_bar.addAction(fullscreen_button)
+    
+    def go_forward(self):
+        if self.tabs.count() > 0:
+            self.tabs.currentWidget().forward()
 
     def create_fullscreen_toggle(self):
         self.fullscreen_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence("F11"), self)
@@ -502,7 +587,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.5")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.6")
 
     def add_new_tab(self, url="https://www.google.com"):
         self.setUpdatesEnabled(False)
@@ -531,9 +616,7 @@ class PyBrowse(QtWidgets.QMainWindow):
             self.tabs.removeTab(index)
 
     def navigate_to_url(self):
-        """Load the URL entered in the URL bar into the current tab or perform a search."""
         query = self.url_bar.text().strip()
-        
         # Basically this is checking to see if it's a URL
         if re.match(r'^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$', query):
             if not query.startswith(('http://', 'https://')):
@@ -544,6 +627,8 @@ class PyBrowse(QtWidgets.QMainWindow):
         current_tab = self.tabs.currentWidget()
         if isinstance(current_tab, BrowserTab):
             current_tab.setUrl(QtCore.QUrl(query))
+        elif isinstance(current_tab, DownloadManager):
+            self.download_manager.add_download(query)
 
 
     def update_url_bar(self):
