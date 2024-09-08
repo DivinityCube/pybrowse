@@ -5,13 +5,30 @@ from urllib.parse import quote
 import json
 import os
 import icons_rc
+import pyttsx3
 from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
-from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu
+from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal, QThread
+from PyQt5.QtWidgets import QWidget, QMainWindow, QTabWidget, QLabel, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtGui import QIcon, QCursor
+
+class TextToSpeechEngine(QThread):
+    finished = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.engine = pyttsx3.init()
+        self.text = ""
+
+    def set_text(self, text):
+        self.text = text
+
+    def run(self):
+        self.engine.say(self.text)
+        self.engine.runAndWait()
+        self.finished.emit()
 
 class AccessibilityPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -162,12 +179,13 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.ad_hosts = set()
+        self.tracker_hosts = set()
         self.load_ad_hosts()
+        self.load_tracker_hosts()
 
-    # THANK YOU, EasyList developer(s)!
     def load_ad_hosts(self):
+        # THANK YOU, EasyList developer(s)!
         url = "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_adservers.txt"
-        
         try:
             response = requests.get(url)
             if response.status_code == 200:
@@ -181,14 +199,40 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             print(f"Error fetching ad list: {e}")
             self.ad_hosts.update([
                 'ads.google.com',
-                'tracking.google.com',
-                'analytics.google.com',
+                'googleadservices.com',
+                'doubleclick.net',
             ])
-    
+
+    def load_tracker_hosts(self):
+        # ALSO THANK YOU, EasyPrivacy developer(s)!
+        url = "https://raw.githubusercontent.com/easylist/easylist/master/easyprivacy/easyprivacy_trackingservers.txt"
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                for line in response.text.splitlines():
+                    if line.startswith('||') and '^' in line:
+                        domain = line.split('^')[0][2:]
+                        self.tracker_hosts.add(domain)
+            else:
+                print(f"Failed to fetch tracker list. Status code: {response.status_code}")
+        except requests.RequestException as e:
+            print(f"Error fetching tracker list: {e}")
+            self.tracker_hosts.update([
+                'analytics.google.com',
+                'facebook.com',
+                'tracking.example.com',
+            ])
+
     def interceptRequest(self, info):
         url = info.requestUrl()
-        if any(url.host().endswith(host) for host in self.ad_hosts):
+        if self.should_block_ad(url) or self.should_block_tracker(url):
             info.block(True)
+
+    def should_block_ad(self, url):
+        return any(url.host().endswith(host) for host in self.ad_hosts)
+
+    def should_block_tracker(self, url):
+        return any(url.host().endswith(host) for host in self.tracker_hosts)
 
 # TODO: This new tab overhaul is very sloppy. I don't feel like this code is super polished and there are probably some gaping holes I'm too tired to fix, or even spot. Maybe in some future version I'll go over this code again
 class ScrollableTabBar(QtWidgets.QTabBar):
@@ -325,6 +369,9 @@ class BrowserTab(QWebEngineView):
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
         self.page().loadFinished.connect(self.page_loaded)
+        self.tts_engine = TextToSpeechEngine()
+        self.tts_engine.finished.connect(self.on_tts_finished)
+        self.page().profile().setUrlRequestInterceptor(self.tracker_blocker)
         self.image_url = None
         print("BrowserTab initialized")
         self.source_window = None
@@ -345,6 +392,22 @@ class BrowserTab(QWebEngineView):
             """)
         else:
             print("Page failed to load")
+    
+    def contextMenuEvent(self, event):
+        menu = self.page().createStandardContextMenu()
+        selected_text = self.page().selectedText()
+        if selected_text:
+            speak_action = QAction("Speak Selected Text", self)
+            speak_action.triggered.connect(lambda: self.speak_text(selected_text))
+            menu.addAction(speak_action)
+        menu.exec_(event.globalPos())
+
+    def speak_text(self, text):
+        self.tts_engine.set_text(text)
+        self.tts_engine.start()
+
+    def on_tts_finished(self):
+        print("Text-to-speech finished")
     
     def build_context_menu(self, menu, position, link_url):
         print("Building context menu")
@@ -551,6 +614,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.tabs.tabCloseRequested.connect(self.close_tab)
         self.tabs.currentChanged.connect(self.update_url_bar)
         self.create_menu_bar()
+        self.create_tts_toggle()
         self.is_private_mode = False
         self.reader_mode_active = False
         self.cleanup_timer = QTimer(self)
@@ -859,6 +923,18 @@ class PyBrowse(QtWidgets.QMainWindow):
         super().resizeEvent(event)
         self.central_widget.setGeometry(self.rect())
     
+    def create_tts_toggle(self):
+        self.tts_action = QAction("Enable Text-to-Speech", self)
+        self.tts_action.setCheckable(True)
+        self.tts_action.toggled.connect(self.toggle_tts)
+        self.navigation_bar.addAction(self.tts_action)
+
+    def toggle_tts(self, enabled):
+        for i in range(self.tabs.count()):
+            tab = self.tabs.widget(i)
+            if isinstance(tab, BrowserTab):
+                tab.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu if enabled else QtCore.Qt.NoContextMenu)
+    
     # To also prevent memory leaks and such 
     def closeEvent(self, event):
         while self.tabs.count() > 0:
@@ -884,6 +960,7 @@ class PyBrowse(QtWidgets.QMainWindow):
     def delayed_cleanup(self):
         self.tabs.deleteLater()
         self.close()
+    
 
 
 if __name__ == "__main__":
