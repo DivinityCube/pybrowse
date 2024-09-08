@@ -1,14 +1,14 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
     <qresource prefix="/icons">
-        <file alias="back.png">icons/back.png</file>
-        <file alias="forward.png">icons/forward.png</file>
-        <file alias="reload.png">icons/reload.png</file>
-        <file alias="go.png">icons/go.png</file>
-        <file alias="new_tab.png">icons/new_tab.png</file>
-        <file alias="reader_mode.png">icons/reader_mode.png</file>
-        <file alias="dev_tools.png">icons/dev_tools.png</file>
-        <file alias="history.png">icons/history.png</file>
-        <file alias="fullscreen.png">icons/fullscreen.png</file>
+        <file alias="back.svg">icons/go-previous.svg</file>
+        <file alias="forward.svg">icons/go-next.svg</file>
+        <file alias="reload.svg">icons/view-refresh.svg</file>
+        <file alias="go.svg">icons/go-jump.svg</file>
+        <file alias="new_tab.svg">icons/tab-new.svg</file>
+        <file alias="reader_mode.svg">icons/format-justify-fill.svg</file>
+        <file alias="dev_tools.svg">icons/applications-development.svg</file>
+        <file alias="history.svg">icons/document-open-recent.svg</file>
+        <file alias="fullscreen.svg">icons/view-fullscreen.svg</file>
     </qresource>
 </RCC>

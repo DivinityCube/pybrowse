@@ -4,6 +4,7 @@ import requests
 from urllib.parse import quote
 import json
 import os
+import icons_rc
 from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
@@ -522,34 +523,34 @@ class PyBrowse(QtWidgets.QMainWindow):
         """Create the navigation bar with URL entry, back, reload, go buttons, and new tab button."""
         self.navigation_bar = QtWidgets.QToolBar("Navigation")
         self.navigation_bar.setMovable(False)
-        back_button = QAction(QIcon.fromTheme("go-previous", QIcon(":/icons/back.png")), "Back", self)
+        back_button = QAction(QIcon.fromTheme("go-previous", QIcon(":/icons/back.svg")), "Back", self)
         back_button.triggered.connect(self.go_back)
         self.navigation_bar.addAction(back_button)
-        forward_button = QAction(QIcon.fromTheme("go-next", QIcon(":/icons/forward.png")), "Forward", self)
+        forward_button = QAction(QIcon.fromTheme("go-next", QIcon(":/icons/forward.svg")), "Forward", self)
         forward_button.triggered.connect(self.go_forward)
         self.navigation_bar.addAction(forward_button)
-        reload_button = QAction(QIcon.fromTheme("view-refresh", QIcon(":/icons/reload.png")), "Reload", self)
+        reload_button = QAction(QIcon.fromTheme("view-refresh", QIcon(":/icons/reload.svg")), "Reload", self)
         reload_button.triggered.connect(self.reload_page)
         self.navigation_bar.addAction(reload_button)
         self.url_bar = QtWidgets.QLineEdit()
         self.url_bar.returnPressed.connect(self.navigate_to_url)
         self.navigation_bar.addWidget(self.url_bar)
-        go_button = QAction(QIcon.fromTheme("go-jump", QIcon(":/icons/go.png")), "Go", self)
+        go_button = QAction(QIcon.fromTheme("go-jump", QIcon(":/icons/go.svg")), "Go", self)
         go_button.triggered.connect(self.navigate_to_url)
         self.navigation_bar.addAction(go_button)
-        new_tab_button = QAction(QIcon.fromTheme("tab-new", QIcon(":/icons/new_tab.png")), "New Tab", self)
+        new_tab_button = QAction(QIcon.fromTheme("tab-new", QIcon(":/icons/new_tab.svg")), "New Tab", self)
         new_tab_button.triggered.connect(lambda: self.add_new_tab())
         self.navigation_bar.addAction(new_tab_button)
-        reader_mode_button = QAction(QIcon.fromTheme("format-justify-fill", QIcon(":/icons/reader_mode.png")), "Reader Mode", self)
+        reader_mode_button = QAction(QIcon.fromTheme("format-justify-fill", QIcon(":/icons/reader_mode.svg")), "Reader Mode", self)
         reader_mode_button.triggered.connect(self.toggle_reader_mode)
         self.navigation_bar.addAction(reader_mode_button)
-        dev_tools_button = QAction(QIcon.fromTheme("applications-development", QIcon(":/icons/dev_tools.png")), "Debug Menu", self)
+        dev_tools_button = QAction(QIcon.fromTheme("applications-development", QIcon(":/icons/dev_tools.svg")), "Debug Menu", self)
         dev_tools_button.triggered.connect(self.open_dev_tools)
         self.navigation_bar.addAction(dev_tools_button)
-        history_button = QAction(QIcon.fromTheme("document-open-recent", QIcon(":/icons/history.png")), "History", self)
+        history_button = QAction(QIcon.fromTheme("document-open-recent", QIcon(":/icons/history.svg")), "History", self)
         history_button.triggered.connect(self.open_history_page)
         self.navigation_bar.addAction(history_button)
-        fullscreen_button = QAction(QIcon.fromTheme("view-fullscreen", QIcon(":/icons/fullscreen.png")), "Fullscreen", self)
+        fullscreen_button = QAction(QIcon.fromTheme("view-fullscreen", QIcon(":/icons/fullscreen.svg")), "Fullscreen", self)
         fullscreen_button.triggered.connect(self.toggle_fullscreen)
         self.navigation_bar.addAction(fullscreen_button)
     
