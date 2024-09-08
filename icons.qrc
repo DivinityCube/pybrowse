@@ -10,5 +10,6 @@
         <file alias="dev_tools.svg">icons/applications-development.svg</file>
         <file alias="history.svg">icons/document-open-recent.svg</file>
         <file alias="fullscreen.svg">icons/view-fullscreen.svg</file>
+        <file alias="download.svg">icons/download-later.svg</file>
     </qresource>
 </RCC>

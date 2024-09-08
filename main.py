@@ -8,9 +8,10 @@ import icons_rc
 from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
-from PyQt5.QtCore import QUrl, QTimer
-from PyQt5.QtWidgets import QMainWindow, QTabWidget, QAction, QFileDialog, QStyleFactory
-from PyQt5.QtGui import QIcon
+from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal
+from PyQt5.QtWidgets import QMainWindow, QTabWidget, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu
+from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+from PyQt5.QtGui import QIcon, QCursor
 
 class AccessibilityPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -93,13 +94,16 @@ class AccessibilityPage(QtWidgets.QWidget):
                 label = QtWidgets.QLabel(item)
             label.setWordWrap(True)
             layout.addWidget(label)
-
         layout.addSpacing(10)
 
 class DownloadManager(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.init_ui()
+        self.network_manager = QNetworkAccessManager()
+        self.network_manager.finished.connect(self.download_finished)
+        self.downloads = {}
+        print("DownloadManager initialized")
 
     def init_ui(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -107,8 +111,52 @@ class DownloadManager(QtWidgets.QWidget):
         layout.addWidget(self.download_list)
 
     def add_download(self, url):
-        item = QtWidgets.QListWidgetItem(f"Downloading: {url}")
-        self.download_list.addItem(item)
+        print(f"Adding download for URL: {url}")
+        url = QUrl(url)
+        file_info = QFileInfo(url.path())
+        file_name = file_info.fileName()
+        if not file_name:
+            file_name = "download"
+        save_path, _ = QFileDialog.getSaveFileName(self, "Save File", QDir.homePath() + "/Downloads/" + file_name)
+        if save_path:
+            print(f"Saving file to: {save_path}")
+            request = QNetworkRequest(url)
+            reply = self.network_manager.get(request)
+            item = QListWidgetItem(f"Downloading: {file_name}")
+            self.download_list.addItem(item)
+            progress_bar = QProgressBar(self.download_list)
+            self.download_list.setItemWidget(item, progress_bar)
+            self.downloads[reply] = {
+                "item": item,
+                "progress_bar": progress_bar,
+                "file": open(save_path, "wb"),
+                "file_name": file_name
+            }
+            reply.downloadProgress.connect(lambda received, total, r=reply: self.update_progress(received, total, r))
+            reply.readyRead.connect(lambda r=reply: self.save_data(r))
+        else:
+            print("File save cancelled by user")
+
+    def update_progress(self, received, total, reply):
+        download = self.downloads.get(reply)
+        if download:
+            progress = int(received * 100 / total)
+            download["progress_bar"].setValue(progress)
+            download["item"].setText(f"Downloading: {download['file_name']} - {progress}%")
+
+    def save_data(self, reply):
+        download = self.downloads.get(reply)
+        if download:
+            download["file"].write(reply.readAll())
+
+    def download_finished(self, reply):
+        download = self.downloads.get(reply)
+        if download:
+            download["file"].close()
+            self.downloads.pop(reply)
+            download["item"].setText(f"Completed: {download['file_name']}")
+            download["progress_bar"].setValue(100)
+        reply.deleteLater()
 
 class AdBlocker(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
@@ -255,8 +303,9 @@ class DebugConsole(QtWidgets.QWidget):
         return None
 
 
-class BrowserTab(QtWebEngineWidgets.QWebEngineView):
+class BrowserTab(QWebEngineView):
     """A single browser tab, which extends QWebEngineView."""
+    download_requested = pyqtSignal(str)
     def __init__(self, url="https://www.google.com", parent=None):
         super().__init__(parent)
         self.ad_blocker = AdBlocker(self)
@@ -275,9 +324,36 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
+        self.page().loadFinished.connect(self.page_loaded)
+        self.image_url = None
+        print("BrowserTab initialized")
         self.source_window = None
     
+    def page_loaded(self, ok):
+        if ok:
+            print("Page loaded successfully")
+            self.page().runJavaScript("""
+                document.addEventListener('contextmenu', function(e) {
+                    if (e.target.tagName.toLowerCase() === 'img') {
+                        window.imageUrl = e.target.src;
+                        console.log('Right-clicked on image:', window.imageUrl);
+                    } else {
+                        window.imageUrl = null;
+                        console.log('Right-clicked, but not on image');
+                    }
+                });
+            """)
+        else:
+            print("Page failed to load")
+    
     def build_context_menu(self, menu, position, link_url):
+        print("Building context menu")
+        self.page().runJavaScript("window.imageUrl;", self.handle_image_context_menu)
+        if self.image_url:
+            print(f"Image URL found: {self.image_url}")
+            download_action = QAction("Download Image", self)
+            download_action.triggered.connect(self.download_image)
+            menu.addAction(download_action)
         if link_url:
             menu.addAction("Open Link in New Tab", lambda: self.open_link_in_new_tab(QtCore.QUrl(link_url)))
             menu.addAction("Copy Link Address", lambda: QtWidgets.QApplication.clipboard().setText(link_url))
@@ -290,6 +366,10 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
         menu.addAction("Save Page", self.save_page)
         menu.exec_(self.mapToGlobal(position))
     
+    def handle_image_context_menu(self, image_url):
+        print(f"Handling image context menu, image_url: {image_url}")
+        self.image_url = image_url
+    
     def show_context_menu(self, position):
         menu = QtWidgets.QMenu(self)
         js_code = """
@@ -298,6 +378,30 @@ class BrowserTab(QtWebEngineWidgets.QWebEngineView):
             link ? link.href : null;
             """ % (position.x(), position.y())
         self.page().runJavaScript(js_code, lambda link_url: self.build_context_menu(menu, position, link_url))
+    
+    def download_image(self):
+        print(f"Download image requested for URL: {self.image_url}")
+        if self.image_url:
+            self.download_requested.emit(self.image_url)
+        else:
+            print("No image URL available for download")
+
+
+    def handle_context_menu(self, image_url):
+        print(f"Handling context menu, image_url: {image_url}")
+        self.image_url = image_url
+        menu = QMenu(self)
+        if self.image_url:
+            print("Adding 'Download Image' to context menu")
+            download_action = QAction("Download Image", self)
+            download_action.triggered.connect(self.download_image)
+            menu.addAction(download_action)
+        else:
+            print("No image URL, not adding 'Download Image' to context menu")
+        menu.addAction(self.pageAction(QWebEnginePage.Back))
+        menu.addAction(self.pageAction(QWebEnginePage.Forward))
+        menu.addAction(self.pageAction(QWebEnginePage.Reload))
+        menu.exec_(QCursor.pos())
     
     def open_link_in_new_tab(self, url):
         main_window = self.window()
@@ -453,10 +557,26 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.cleanup_timer.setSingleShot(True)
         self.cleanup_timer.timeout.connect(self.delayed_cleanup)
         self.create_private_mode_toggle()
+        self.download_manager = DownloadManager(self)
         self.add_new_tab("https://www.google.com")
-        self.download_manager = DownloadManager()
-        self.tabs.addTab(self.download_manager, "Downloads")
     
+    def add_new_tab(self, url="https://www.google.com"):
+        self.setUpdatesEnabled(False)
+        browser = BrowserTab(url)
+        i = self.tabs.addTab(browser, "New Tab")
+        self.tabs.setCurrentIndex(i)
+        browser.urlChanged.connect(lambda qurl, browser=browser: self.update_url_bar(qurl, browser))
+        browser.loadFinished.connect(lambda _, i=i, browser=browser: self.tabs.setTabText(i, browser.page().title()))
+        browser.download_requested.connect(self.download_manager.add_download)
+        print(f"New tab added: {url}")
+        if self.is_private_mode:
+            new_tab = PrivateBrowserTab(url)
+        else:
+            new_tab = BrowserTab(url)       
+        if not self.is_private_mode:
+            new_tab.urlChanged.connect(self.add_to_history)
+        self.setUpdatesEnabled(True)
+
     def update_frame(self):
         self.repaint()
     
@@ -553,7 +673,19 @@ class PyBrowse(QtWidgets.QMainWindow):
         fullscreen_button = QAction(QIcon.fromTheme("view-fullscreen", QIcon(":/icons/fullscreen.svg")), "Fullscreen", self)
         fullscreen_button.triggered.connect(self.toggle_fullscreen)
         self.navigation_bar.addAction(fullscreen_button)
+        download_button = QAction(QIcon.fromTheme("download", QIcon(":/icons/download.svg")), "Downloads", self)
+        download_button.triggered.connect(self.open_download_manager)
+        self.navigation_bar.addAction(download_button)
     
+    def open_download_manager(self):
+        for i in range(self.tabs.count()):
+            if isinstance(self.tabs.widget(i), DownloadManager):
+                self.tabs.setCurrentIndex(i)
+                return
+        download_tab_index = self.tabs.addTab(self.download_manager, "Downloads")
+        self.tabs.setCurrentIndex(download_tab_index)
+
+
     def go_forward(self):
         if self.tabs.count() > 0:
             self.tabs.currentWidget().forward()
@@ -588,23 +720,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.1.6")
-
-    def add_new_tab(self, url="https://www.google.com"):
-        self.setUpdatesEnabled(False)
-        if self.is_private_mode:
-            new_tab = PrivateBrowserTab(url)
-        else:
-            new_tab = BrowserTab(url)
-        
-        index = self.tabs.addTab(new_tab, "New Tab")
-        self.tabs.setCurrentIndex(index)
-        new_tab.titleChanged.connect(lambda title, tab=new_tab: self.update_tab_title(tab, title))
-        new_tab.urlChanged.connect(self.update_url_bar)
-        
-        if not self.is_private_mode:
-            new_tab.urlChanged.connect(self.add_to_history)
-        self.setUpdatesEnabled(True)
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.0")
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
@@ -631,15 +747,20 @@ class PyBrowse(QtWidgets.QMainWindow):
         elif isinstance(current_tab, DownloadManager):
             self.download_manager.add_download(query)
 
-
-    def update_url_bar(self):
-        """Update the URL bar when the user navigates to a different page."""
-        if self.tabs.count() > 0:
-            current_tab = self.tabs.currentWidget()
-            if isinstance(current_tab, BrowserTab):
-                self.url_bar.setText(current_tab.url().toString())
-            else:
-                self.url_bar.clear()
+    def update_url_bar(self, q, browser=None):
+        if browser != self.tabs.currentWidget():
+            return
+        if isinstance(q, int):
+            # This is likely an index, not a URL. Let's ignore it.
+            return
+        if not isinstance(q, QUrl):
+            # This is essentially saying: if it's not a QUrl object, try to convert it
+            # (Rough English translation, of course)
+            q = QUrl(str(q))
+        if q.toString() == 'about:blank':
+            return
+        self.url_bar.setText(q.toString())
+        self.url_bar.setCursorPosition(0)
 
     def go_back(self):
         """Go back in the history of the current tab."""
@@ -740,8 +861,16 @@ class PyBrowse(QtWidgets.QMainWindow):
     
     # To also prevent memory leaks and such 
     def closeEvent(self, event):
-        self.start_cleanup()
-        super().closeEvent(event)
+        while self.tabs.count() > 0:
+            widget = self.tabs.widget(0)
+            self.tabs.removeTab(0)
+            if hasattr(widget, 'close'):
+                widget.close()
+            widget.deleteLater()
+        if hasattr(self, 'download_manager'):
+            self.download_manager.close()
+            self.download_manager.deleteLater()
+        event.accept()
 
     def start_cleanup(self):
         while self.tabs.count() > 0:
