@@ -10,6 +10,70 @@ from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineP
 from PyQt5.QtCore import QUrl, QTimer
 from PyQt5.QtWidgets import QMainWindow, QTabWidget
 
+class AccessibilityPage(QtWidgets.QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QtWidgets.QVBoxLayout(self)
+        title = QtWidgets.QLabel("Accessibility Features")
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet("font-size: 24px; font-weight: bold;")
+        layout.addWidget(title)
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_widget = QtWidgets.QWidget()
+        scroll_layout = QtWidgets.QVBoxLayout(scroll_widget)
+        self.add_section(scroll_layout, "Keyboard Shortcuts", [
+            ("Ctrl + T", "Open new tab"),
+            ("Ctrl + W", "Close current tab"),
+            ("Ctrl + L", "Focus address bar"),
+            ("F11", "Toggle fullscreen"),
+            ("Esc", "Exit fullscreen"),
+        ])
+
+        self.add_section(scroll_layout, "Text Zoom", [
+            ("To increase or decrease the text size:"),
+            ("1. Press Ctrl and scroll the mouse wheel"),
+            ("2. Or use Ctrl + Plus (+) to zoom in"),
+            ("3. Use Ctrl + Minus (-) to zoom out"),
+            ("4. Use Ctrl + 0 to reset zoom"),
+        ])
+
+        self.add_section(scroll_layout, "Reader Mode", [
+            ("1. Click the 'Reader Mode' button in the toolbar"),
+            ("2. This simplifies the page layout for easier reading"),
+        ])
+
+        self.add_section(scroll_layout, "Private Browsing", [
+            ("1. Toggle 'Private Mode' in the navigation bar"),
+            ("2. Your browsing history and cookies won't be saved in this mode"),
+        ])
+
+        self.add_section(scroll_layout, "Screen Reader Compatibility", [
+            "PyBrowse is compatible with most screen readers.",
+            "Please ensure your screen reader is up to date for the best experience.",
+        ])
+
+        scroll_area.setWidget(scroll_widget)
+        layout.addWidget(scroll_area)
+
+    def add_section(self, layout, title, items):
+        section_title = QtWidgets.QLabel(title)
+        section_title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        layout.addWidget(section_title)
+
+        for item in items:
+            if isinstance(item, tuple):
+                label = QtWidgets.QLabel(f"<b>{item[0]}:</b> {item[1]}")
+            else:
+                label = QtWidgets.QLabel(item)
+            label.setWordWrap(True)
+            layout.addWidget(label)
+
+        layout.addSpacing(10)
+
 class AdBlocker(QWebEngineUrlRequestInterceptor):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -370,6 +434,11 @@ class PyBrowse(QtWidgets.QMainWindow):
             self.setWindowTitle("PyBrowse (Private Mode)")
         else:
             self.setWindowTitle("PyBrowse")
+    
+    def open_accessibility_page(self):
+        accessibility_page = AccessibilityPage(self)
+        i = self.tabs.addTab(accessibility_page, "Accessibility")
+        self.tabs.setCurrentIndex(i)
 
     def create_navigation_bar(self):
         """Create the navigation bar with URL entry, back, reload, go buttons, and new tab button."""
@@ -423,6 +492,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
+        help_menu.addAction("Accessibility", self.open_accessibility_page)
         self.bookmarks_menu = menu_bar.addMenu("Bookmarks")
         add_bookmark_action = QtWidgets.QAction("Add Bookmark", self)
         add_bookmark_action.triggered.connect(self.add_bookmark)
