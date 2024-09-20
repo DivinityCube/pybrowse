@@ -13,6 +13,72 @@ from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal, QThread, Qt
 from PyQt5.QtWidgets import QWidget, QMainWindow, QTabWidget, QLabel, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtGui import QIcon, QCursor
+from datetime import datetime, timedelta
+
+class CustomNewTabPage(QWidget):
+    def __init__(self, main_window, is_private=False):
+        super().__init__(parent=main_window)
+        self.main_window = main_window
+        self.is_private = is_private
+        self.init_ui()
+    def init_ui(self):
+        layout = QVBoxLayout()
+        mode_label = QLabel("Private Browsing" if self.is_private else "Normal Browsing")
+        mode_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(mode_label)
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Search or enter address")
+        self.search_bar.returnPressed.connect(self.perform_search)
+        layout.addWidget(self.search_bar)
+        if not self.is_private:
+            most_visited_layout = QGridLayout()
+            # This would be populated dynamically based on user's browsing history
+            for i in range(8):
+                site_button = QPushButton(f"Site {i+1}")
+                site_button.clicked.connect(lambda _, url=f"https://example{i+1}.com": self.open_url(url))
+                most_visited_layout.addWidget(site_button, i // 4, i % 4)
+            layout.addLayout(most_visited_layout)
+        quick_links_layout = QHBoxLayout()
+        quick_links = [("Google", "https://www.google.com"), 
+                       ("YouTube", "https://www.youtube.com"),
+                       ("GitHub", "https://www.github.com")]
+        for name, url in quick_links:
+            link_button = QPushButton(name)
+            link_button.clicked.connect(lambda _, u=url: self.open_url(u))
+            quick_links_layout.addWidget(link_button)
+        layout.addLayout(quick_links_layout)
+        if not self.is_private:
+            weather_label = QLabel("Weather: Placeholder")
+            layout.addWidget(weather_label)
+            # How meta is this placeholder
+            news_label = QLabel("Latest News: PyBrowse 0.2.2 Released!")
+            layout.addWidget(news_label)
+
+        self.setLayout(layout)
+
+    def perform_search(self):
+        query = self.search_bar.text()
+        url = QUrl(f"https://www.google.com/search?q={query}")
+        self.main_window.add_new_tab(url.toString(), is_private=self.is_private)
+
+    def open_url(self, url):
+        self.main_window.add_new_tab(url, is_private=self.is_private)
+
+class TextToSpeechEngine(QThread):
+    finished = pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.engine = pyttsx3.init()
+        self.text = ""
+
+    def set_text(self, text):
+        self.text = text
+
+    def run(self):
+        self.engine.say(self.text)
+        self.engine.runAndWait()
+        self.finished.emit()
 
 class CustomNewTabPage(QWidget):
     def __init__(self, main_window, is_private=False):
@@ -233,8 +299,41 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
         super().__init__(parent)
         self.ad_hosts = set()
         self.tracker_hosts = set()
+        self.cache_file = "adblocker_cache.json"
+        self.cache_duration = timedelta(days=7)
         self.load_ad_hosts()
         self.load_tracker_hosts()
+    
+    def load_hosts(self):
+        if self.is_cache_valid():
+            self.load_from_cache()
+        else:
+            self.load_ad_hosts()
+            self.load_tracker_hosts()
+            self.save_to_cache()
+    
+    def is_cache_valid():
+        if not os.path.exists(self.cache_file):
+            return False
+        with open(self.cache_file, 'r') as f:
+            cache = json.load(f)
+        last_opened = datetime.fromisoformat(cache['last_updated'])
+        return datetime.now() - last_updated < self.cache_duration
+
+    def load_from_cache(self):
+        with open(self.cache_file, 'r') as f:
+            cache = json.load(f)
+        self.ad_hosts = set(cache['ad_hosts'])
+        self.tracker_hosts = set(cache['tracker_hosts'])
+    
+    def save_to_cache(self):
+        cache = {
+            'last_updated': datetime.now().isoformat(),
+            'ad_hosts': list(self.ad_hosts),
+            'tracker_hosts': list(self.tracker_hosts)
+        }
+        with open(self.cache_file, 'r') as f:
+            json.dump(cache, f)
 
     def load_ad_hosts(self):
         # THANK YOU, EasyList developer(s)!
