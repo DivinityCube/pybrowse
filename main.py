@@ -9,11 +9,12 @@ import pyttsx3
 from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
-from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal, QThread, Qt
+from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal, QThread, Qt, QRunnable, QThreadPool
 from PyQt5.QtWidgets import QWidget, QMainWindow, QTabWidget, QLabel, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtGui import QIcon, QCursor
 from datetime import datetime, timedelta
+from functools import partial
 
 class CustomNewTabPage(QWidget):
     def __init__(self, main_window, is_private=False):
@@ -21,6 +22,7 @@ class CustomNewTabPage(QWidget):
         self.main_window = main_window
         self.is_private = is_private
         self.init_ui()
+
     def init_ui(self):
         layout = QVBoxLayout()
         mode_label = QLabel("Private Browsing" if self.is_private else "Normal Browsing")
@@ -32,25 +34,23 @@ class CustomNewTabPage(QWidget):
         layout.addWidget(self.search_bar)
         if not self.is_private:
             most_visited_layout = QGridLayout()
-            # This would be populated dynamically based on user's browsing history
             for i in range(8):
                 site_button = QPushButton(f"Site {i+1}")
-                site_button.clicked.connect(lambda _, url=f"https://example{i+1}.com": self.open_url(url))
+                site_button.clicked.connect(partial(self.open_url, f"https://example{i+1}.com"))
                 most_visited_layout.addWidget(site_button, i // 4, i % 4)
             layout.addLayout(most_visited_layout)
         quick_links_layout = QHBoxLayout()
-        quick_links = [("Google", "https://www.google.com"), 
+        quick_links = [("Google", "https://www.google.com"),
                        ("YouTube", "https://www.youtube.com"),
                        ("GitHub", "https://www.github.com")]
         for name, url in quick_links:
             link_button = QPushButton(name)
-            link_button.clicked.connect(lambda _, u=url: self.open_url(u))
+            link_button.clicked.connect(partial(self.open_url, url))
             quick_links_layout.addWidget(link_button)
         layout.addLayout(quick_links_layout)
         if not self.is_private:
             weather_label = QLabel("Weather: Placeholder")
             layout.addWidget(weather_label)
-            # How meta is this placeholder
             news_label = QLabel("Latest News: PyBrowse 0.2.2 Released!")
             layout.addWidget(news_label)
 
@@ -64,90 +64,17 @@ class CustomNewTabPage(QWidget):
     def open_url(self, url):
         self.main_window.add_new_tab(url, is_private=self.is_private)
 
-class TextToSpeechEngine(QThread):
-    finished = pyqtSignal()
-
-    def __init__(self):
+class TextToSpeechEngine(QRunnable):
+    def __init__(self, text, finished_callback):
         super().__init__()
         self.engine = pyttsx3.init()
-        self.text = ""
-
-    def set_text(self, text):
         self.text = text
+        self.finished_callback = finished_callback
 
     def run(self):
         self.engine.say(self.text)
         self.engine.runAndWait()
-        self.finished.emit()
-
-class CustomNewTabPage(QWidget):
-    def __init__(self, main_window, is_private=False):
-        super().__init__(parent=main_window)
-        self.main_window = main_window
-        self.is_private = is_private
-        self.init_ui()
-    def init_ui(self):
-        layout = QVBoxLayout()
-        # Mode Indicator
-        mode_label = QLabel("Private Browsing" if self.is_private else "Normal Browsing")
-        mode_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(mode_label)
-        # Search Bar
-        self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Search or enter address")
-        self.search_bar.returnPressed.connect(self.perform_search)
-        layout.addWidget(self.search_bar)
-        if not self.is_private:
-            # Most Visited Sites (only in normal mode)
-            most_visited_layout = QGridLayout()
-            # This would be populated dynamically based on user's browsing history
-            for i in range(8):
-                site_button = QPushButton(f"Site {i+1}")
-                site_button.clicked.connect(lambda _, url=f"https://example{i+1}.com": self.open_url(url))
-                most_visited_layout.addWidget(site_button, i // 4, i % 4)
-            layout.addLayout(most_visited_layout)
-        # Quick Links (available in both modes)
-        quick_links_layout = QHBoxLayout()
-        quick_links = [("Google", "https://www.google.com"), 
-                       ("YouTube", "https://www.youtube.com"),
-                       ("GitHub", "https://www.github.com")]
-        for name, url in quick_links:
-            link_button = QPushButton(name)
-            link_button.clicked.connect(lambda _, u=url: self.open_url(u))
-            quick_links_layout.addWidget(link_button)
-        layout.addLayout(quick_links_layout)
-        if not self.is_private:
-            weather_label = QLabel("Weather: Placeholder")
-            layout.addWidget(weather_label)
-            # How meta is this placeholder
-            news_label = QLabel("Latest News: PyBrowse 0.2.2 Released!")
-            layout.addWidget(news_label)
-
-        self.setLayout(layout)
-
-    def perform_search(self):
-        query = self.search_bar.text()
-        url = QUrl(f"https://www.google.com/search?q={query}")
-        self.main_window.add_new_tab(url.toString(), is_private=self.is_private)
-
-    def open_url(self, url):
-        self.main_window.add_new_tab(url, is_private=self.is_private)
-
-class TextToSpeechEngine(QThread):
-    finished = pyqtSignal()
-
-    def __init__(self):
-        super().__init__()
-        self.engine = pyttsx3.init()
-        self.text = ""
-
-    def set_text(self, text):
-        self.text = text
-
-    def run(self):
-        self.engine.say(self.text)
-        self.engine.runAndWait()
-        self.finished.emit()
+        self.finished_callback()
 
 class AccessibilityPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -216,7 +143,6 @@ class AccessibilityPage(QtWidgets.QWidget):
     
     def toggle_tts(self, state):
         print("Text-to-speech toggled:", state == QtCore.Qt.Checked)
-
 
     def add_section(self, layout, title, items):
         section_title = QtWidgets.QLabel(title)
@@ -301,8 +227,7 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
         self.tracker_hosts = set()
         self.cache_file = "adblocker_cache.json"
         self.cache_duration = timedelta(days=7)
-        self.load_ad_hosts()
-        self.load_tracker_hosts()
+        self.load_hosts()
     
     def load_hosts(self):
         if self.is_cache_valid():
@@ -312,12 +237,12 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             self.load_tracker_hosts()
             self.save_to_cache()
     
-    def is_cache_valid():
+    def is_cache_valid(self):
         if not os.path.exists(self.cache_file):
             return False
         with open(self.cache_file, 'r') as f:
             cache = json.load(f)
-        last_opened = datetime.fromisoformat(cache['last_updated'])
+        last_updated = datetime.fromisoformat(cache['last_updated'])
         return datetime.now() - last_updated < self.cache_duration
 
     def load_from_cache(self):
@@ -332,11 +257,10 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             'ad_hosts': list(self.ad_hosts),
             'tracker_hosts': list(self.tracker_hosts)
         }
-        with open(self.cache_file, 'r') as f:
+        with open(self.cache_file, 'w') as f:
             json.dump(cache, f)
 
     def load_ad_hosts(self):
-        # THANK YOU, EasyList developer(s)!
         url = "https://raw.githubusercontent.com/easylist/easylist/master/easylist/easylist_adservers.txt"
         try:
             response = requests.get(url)
@@ -356,7 +280,6 @@ class AdBlocker(QWebEngineUrlRequestInterceptor):
             ])
 
     def load_tracker_hosts(self):
-        # ALSO THANK YOU, EasyPrivacy developer(s)!
         url = "https://raw.githubusercontent.com/easylist/easylist/master/easyprivacy/easyprivacy_trackingservers.txt"
         try:
             response = requests.get(url)
@@ -500,15 +423,12 @@ class DebugConsole(QtWidgets.QWidget):
 
 
 class BrowserTab(QWebEngineView):
-    """A single browser tab, which extends QWebEngineView."""
-    download_requested = pyqtSignal(str)
     def __init__(self, url="https://www.google.com", profile=None, parent=None):
         super().__init__(parent)
         self.ad_blocker = AdBlocker(self)
         self.profile = profile or QWebEngineProfile.defaultProfile()
         self._page = QWebEnginePage(self.profile, self)
         self.profile.setUrlRequestInterceptor(self.ad_blocker)
-        self.custom_page = CustomWebEnginePage(self.profile, self)
         self.setPage(self._page)
         self.custom_page = CustomWebEnginePage(self)
         self.web_page = QWebEnginePage(self.profile, self)
@@ -518,8 +438,8 @@ class BrowserTab(QWebEngineView):
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.custom_page.console_message.connect(self.handle_console_message)
         self._page.loadFinished.connect(self.page_loaded)
-        self.tts_engine = TextToSpeechEngine()
-        self.tts_engine.finished.connect(self.on_tts_finished)
+        self.tts_engine = None
+        self.thread_pool = QThreadPool()
         self.page().profile().setUrlRequestInterceptor(self.ad_blocker)
         self.image_url = None
         print("BrowserTab initialized")
@@ -552,11 +472,22 @@ class BrowserTab(QWebEngineView):
         menu.exec_(event.globalPos())
 
     def speak_text(self, text):
-        self.tts_engine.set_text(text)
-        self.tts_engine.start()
+        if self.tts_engine is not None:
+            self.thread_pool.clear()
+        self.tts_engine = TextToSpeechEngine(text, self.on_tts_finished)
+        self.thread_pool.start(self.tts_engine)
 
     def on_tts_finished(self):
         print("Text-to-speech finished")
+    
+    def show_context_menu(self, position):
+        menu = QtWidgets.QMenu(self)
+        js_code = """
+            var element = document.elementFromPoint(%d, %d);
+            var link = element ? element.closest('a') : null;
+            link ? link.href : null;
+            """ % (position.x(), position.y())
+        self.page().runJavaScript(js_code, lambda link_url: self.build_context_menu(menu, position, link_url))
     
     def build_context_menu(self, menu, position, link_url):
         print("Building context menu")
@@ -579,41 +510,9 @@ class BrowserTab(QWebEngineView):
         menu.exec_(self.mapToGlobal(position))
     
     def handle_image_context_menu(self, image_url):
-        print(f"Handling image context menu, image_url: {image_url}")
-        self.image_url = image_url
-    
-    def show_context_menu(self, position):
-        menu = QtWidgets.QMenu(self)
-        js_code = """
-            var element = document.elementFromPoint(%d, %d);
-            var link = element ? element.closest('a') : null;
-            link ? link.href : null;
-            """ % (position.x(), position.y())
-        self.page().runJavaScript(js_code, lambda link_url: self.build_context_menu(menu, position, link_url))
-    
-    def download_image(self):
-        print(f"Download image requested for URL: {self.image_url}")
-        if self.image_url:
-            self.download_requested.emit(self.image_url)
-        else:
-            print("No image URL available for download")
-
-
-    def handle_context_menu(self, image_url):
-        print(f"Handling context menu, image_url: {image_url}")
-        self.image_url = image_url
-        menu = QMenu(self)
-        if self.image_url:
-            print("Adding 'Download Image' to context menu")
-            download_action = QAction("Download Image", self)
-            download_action.triggered.connect(self.download_image)
-            menu.addAction(download_action)
-        else:
-            print("No image URL, not adding 'Download Image' to context menu")
-        menu.addAction(self.pageAction(QWebEnginePage.Back))
-        menu.addAction(self.pageAction(QWebEnginePage.Forward))
-        menu.addAction(self.pageAction(QWebEnginePage.Reload))
-        menu.exec_(QCursor.pos())
+        if image_url:
+            print(f"Handling image context menu, image_url: {image_url}")
+            self.image_url = image_url
     
     def open_link_in_new_tab(self, url):
         main_window = self.window()
@@ -659,19 +558,15 @@ class BrowserTab(QWebEngineView):
     
     def toggle_reader_mode(self):
         if not self.reader_mode_active:
-            # Yes, I'm using Mozilla's Readability library for the Reader.
             js_code = """
             (function() {
-                // Dynamically load the Readability library
                 var script = document.createElement('script');
                 script.src = 'https://cdn.jsdelivr.net/npm/@mozilla/readability@0.4.4/Readability.js';
                 script.onload = function() {
                     var article = new Readability(document).parse();
                     if (article) {
-                        // Replace the document content with the readable version
                         document.body.innerHTML = '<h1>' + article.title + '</h1>' + article.content;
 
-                        // Add some basic reader mode styles
                         var style = document.createElement('style');
                         style.innerHTML = `
                             body { font-family: Arial, sans-serif; font-size: 18px; line-height: 1.6; background-color: #f5f5f5; color: #333; margin: 0 auto; max-width: 800px; padding: 20px; }
@@ -693,14 +588,12 @@ class BrowserTab(QWebEngineView):
             self.reload()
             self.reader_mode_active = False
     
-    # To stop memory leaks and such
     def closeEvent(self, event):
         self.web_page.deleteLater()
         self.profile.setUrlRequestInterceptor(None)
         self.web_page.setParent(None)
         self.profile.deleteLater()
         super().closeEvent(event)
-
 
 class PrivateBrowserTab(BrowserTab):
     def __init__(self, url="https://www.google.com", profile=None, parent=None):
@@ -785,7 +678,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.cleanup_timer.setSingleShot(True)
         self.cleanup_timer.timeout.connect(self.delayed_cleanup)
         self.create_private_mode_toggle()
-        self.download_manager = DownloadManager(self)
+        self.download_manager = DownloadManager()
         self.add_new_tab("https://www.google.com")
     
     def add_new_tab(self, url=None, is_private=None):
@@ -948,7 +841,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.2")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.3")
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
