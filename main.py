@@ -51,7 +51,7 @@ class CustomNewTabPage(QWidget):
         if not self.is_private:
             weather_label = QLabel("Weather: Placeholder")
             layout.addWidget(weather_label)
-            news_label = QLabel("Latest News: PyBrowse 0.2.2 Released!")
+            news_label = QLabel("Latest News: PyBrowse 0.2.4 Released!")
             layout.addWidget(news_label)
 
         self.setLayout(layout)
@@ -643,6 +643,51 @@ class HistoryPage(QtWidgets.QWidget):
             item = QtWidgets.QListWidgetItem(url)
             self.history_list.addItem(item)
 
+class SettingsDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.layout = QtWidgets.QVBoxLayout(self)
+
+        # Search Engine Settings
+        search_engine_group = QtWidgets.QGroupBox("Search Engine")
+        search_engine_layout = QtWidgets.QVBoxLayout()
+
+        self.search_engine_combo = QtWidgets.QComboBox()
+        self.search_engine_combo.addItems(["Google", "Bing", "DuckDuckGo", "Yandex", "Custom"])
+        search_engine_layout.addWidget(self.search_engine_combo)
+
+        self.custom_search_engine_input = QtWidgets.QLineEdit()
+        self.custom_search_engine_input.setPlaceholderText("Enter custom search URL...")
+        search_engine_layout.addWidget(self.custom_search_engine_input)
+
+        search_engine_group.setLayout(search_engine_layout)
+        self.layout.addWidget(search_engine_group)
+
+        # Buttons
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            QtCore.Qt.Horizontal, self)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self.layout.addWidget(buttons)
+
+        self.load_settings()
+
+    def load_settings(self):
+        settings = QtCore.QSettings("PyBrowse", "PyBrowse")
+        search_engine = settings.value("search_engine", "Google")
+        custom_search = settings.value("custom_search_engine", "")
+        index = self.search_engine_combo.findText(search_engine)
+        self.search_engine_combo.setCurrentIndex(index)
+        self.custom_search_engine_input.setText(custom_search)
+
+    def save_settings(self):
+        settings = QtCore.QSettings("PyBrowse", "PyBrowse")
+        search_engine = self.search_engine_combo.currentText()
+        custom_search = self.custom_search_engine_input.text()
+        settings.setValue("search_engine", search_engine)
+        settings.setValue("custom_search_engine", custom_search)
 
 class PyBrowse(QtWidgets.QMainWindow):
     def __init__(self):
@@ -680,6 +725,7 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.create_private_mode_toggle()
         self.download_manager = DownloadManager()
         self.add_new_tab("https://www.google.com")
+        self.load_user_settings()
     
     def add_new_tab(self, url=None, is_private=None):
         if is_private is None:
@@ -838,10 +884,25 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.bookmarks_menu.addAction(add_bookmark_action)
         self.bookmarks_menu.addSeparator()
         self.load_bookmarks_menu()
+        settings_menu = menu_bar.addMenu("Settings")
+        settings_action = QtWidgets.QAction("Search Engine Preferences", self)
+        settings_action.triggered.connect(self.open_settings_dialog)
+        settings_menu.addAction(settings_action)
+    
+    def open_settings_dialog(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            dialog.save_settings()
+            self.load_user_settings()
+
+    def load_user_settings(self):
+        settings = QtCore.QSettings("PyBrowse", "PyBrowse")
+        self.search_engine = settings.value("search_engine", "Google")
+        self.custom_search_engine = settings.value("custom_search_engine", "")
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.3")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.4")
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
@@ -855,18 +916,34 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def navigate_to_url(self):
         query = self.url_bar.text().strip()
-        # Basically this is checking to see if it's a URL
-        if re.match(r'^(http:\/\/www\.|https:\/\/www\.|http:\/\/|https:\/\/)?[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,5}(:[0-9]{1,5})?(\/.*)?$', query):
-            if not query.startswith(('http://', 'https://')):
-                query = 'http://' + query
+        if re.match(r'^(http|https)://', query):
+            url = QtCore.QUrl(query)
+        elif re.match(r'^[\w\-]+(\.[\w\-]+)+.*$', query):
+            url = QtCore.QUrl('http://' + query)
         else:
-            query = f'https://www.google.com/search?q={quote(query)}'
+            search_url = self.get_search_url(query)
+            url = QtCore.QUrl(search_url)
 
         current_tab = self.tabs.currentWidget()
         if isinstance(current_tab, BrowserTab):
-            current_tab.setUrl(QtCore.QUrl(query))
+            current_tab.setUrl(url)
         elif isinstance(current_tab, DownloadManager):
-            self.download_manager.add_download(query)
+            self.download_manager.add_download(url.toString())
+
+    def get_search_url(self, query):
+        if self.search_engine == "Google":
+            return f"https://www.google.com/search?q={quote(query)}"
+        elif self.search_engine == "Bing":
+            return f"https://www.bing.com/search?q={quote(query)}"
+        elif self.search_engine == "DuckDuckGo":
+            return f"https://duckduckgo.com/?q={quote(query)}"
+        elif self.search_engine == "Yandex":
+            return f"https://yandex.com/search/?text={quote(query)}&lang=en"
+        elif self.search_engine == "Custom" and self.custom_search_engine:
+            return self.custom_search_engine.replace("{query}", quote(query))
+        else:
+            # Default to Google if no valid search engine is selected
+            return f"https://www.google.com/search?q={quote(query)}"
 
     def update_url_bar(self, q, browser=None):
         if browser != self.tabs.currentWidget():
@@ -1022,6 +1099,9 @@ class PyBrowse(QtWidgets.QMainWindow):
 
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
+    QtCore.QCoreApplication.setOrganizationName("PyBrowse")
+    QtCore.QCoreApplication.setOrganizationDomain("pybrowse.example.com")
+    QtCore.QCoreApplication.setApplicationName("PyBrowse")
     window = PyBrowse()
     window.show()
     sys.exit(app.exec_())
