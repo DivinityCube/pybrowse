@@ -10,7 +10,7 @@ from PyQt5.QtWebEngineCore import QWebEngineUrlRequestInterceptor
 from PyQt5 import QtWidgets, QtCore, QtWebEngineWidgets, QtGui
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEnginePage, QWebEngineProfile
 from PyQt5.QtCore import QUrl, QTimer, QFileInfo, QDir, pyqtSignal, QThread, Qt, QRunnable, QThreadPool
-from PyQt5.QtWidgets import QWidget, QMainWindow, QTabWidget, QLabel, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
+from PyQt5.QtWidgets import QWidget, QCompleter, QMainWindow, QTabWidget, QLabel, QAction, QFileDialog, QStyleFactory, QListWidgetItem, QProgressBar, QFileDialog, QMenu, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, QGridLayout
 from PyQt5.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 from PyQt5.QtGui import QIcon, QCursor
 from datetime import datetime, timedelta
@@ -51,7 +51,7 @@ class CustomNewTabPage(QWidget):
         if not self.is_private:
             weather_label = QLabel("Weather: Placeholder")
             layout.addWidget(weather_label)
-            news_label = QLabel("Latest News: PyBrowse 0.2.4 Released!")
+            news_label = QLabel("Latest News: PyBrowse 0.2.5 Released!")
             layout.addWidget(news_label)
 
         self.setLayout(layout)
@@ -726,6 +726,35 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.download_manager = DownloadManager()
         self.add_new_tab("https://www.google.com")
         self.load_user_settings()
+        self.setup_completer()
+    
+    def setup_completer(self):
+        self.completer_model = QtCore.QStringListModel()
+        self.completer = QCompleter(self.completer_model, self)
+        self.completer.setCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self.url_bar.setCompleter(self.completer)
+        self.url_bar.textEdited.connect(self.fetch_search_suggestions)
+    
+    def update_completer_model(self):
+        suggestions = set(self.history + self.bookmarks)
+        self.completer_model.setStringList(sorted(suggestions))
+    
+    def fetch_search_suggestions(self, text):
+        if text.strip() == '':
+            return
+
+        try:
+            response = requests.get(
+                f"https://suggestqueries.google.com/complete/search",
+                params={'client': 'firefox', 'q': text}
+            )
+            suggestions = response.json()[1]
+            combined_suggestions = set(self.history + self.bookmarks + suggestions)
+            self.completer_model.setStringList(sorted(combined_suggestions))
+        except requests.RequestException as e:
+            print(f"Error fetching search suggestions: {e}")
+            # Fallback to history and bookmarks
+            self.update_completer_model()
     
     def add_new_tab(self, url=None, is_private=None):
         if is_private is None:
@@ -902,7 +931,7 @@ class PyBrowse(QtWidgets.QMainWindow):
 
     def show_about_dialog(self):
         """Show an About dialog with browser information."""
-        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.4")
+        QtWidgets.QMessageBox.information(self, "About PyBrowse", "PyBrowse - Version 0.2.5")
     
     def update_tab_title(self, tab, title):
         index = self.tabs.indexOf(tab)
@@ -915,20 +944,24 @@ class PyBrowse(QtWidgets.QMainWindow):
             self.tabs.removeTab(index)
 
     def navigate_to_url(self):
-        query = self.url_bar.text().strip()
-        if re.match(r'^(http|https)://', query):
-            url = QtCore.QUrl(query)
-        elif re.match(r'^[\w\-]+(\.[\w\-]+)+.*$', query):
-            url = QtCore.QUrl('http://' + query)
+        text = self.url_bar.text().strip()
+        if text == '':
+            return
+
+        # Check if the text is a URL or needs to be searched
+        if re.match(r'^(http|https)://', text):
+            url = QtCore.QUrl(text)
+        elif re.match(r'^[\w\-]+(\.[\w\-]+)+.*$', text):
+            url = QtCore.QUrl('http://' + text)
         else:
-            search_url = self.get_search_url(query)
+            search_url = self.get_search_url(text)
             url = QtCore.QUrl(search_url)
 
         current_tab = self.tabs.currentWidget()
         if isinstance(current_tab, BrowserTab):
             current_tab.setUrl(url)
-        elif isinstance(current_tab, DownloadManager):
-            self.download_manager.add_download(url.toString())
+            # Add to history
+            self.add_to_history(url.toString())
 
     def get_search_url(self, query):
         if self.search_engine == "Google":
@@ -970,14 +1003,6 @@ class PyBrowse(QtWidgets.QMainWindow):
         if self.tabs.count() > 0:
             self.tabs.currentWidget().reload()
 
-    def add_bookmark(self):
-        """Add the current URL to the bookmarks and update the Bookmarks menu."""
-        current_url = self.tabs.currentWidget().url().toString()
-        if current_url not in self.bookmarks:
-            self.bookmarks.append(current_url)
-            self.save_bookmarks()
-            self.load_bookmarks_menu()
-
     def open_history_page(self):
         """Open a new tab with the browsing history."""
         history_tab = HistoryPage(self.history)
@@ -985,11 +1010,18 @@ class PyBrowse(QtWidgets.QMainWindow):
         self.tabs.setCurrentIndex(i)
 
     def add_to_history(self, url):
-        if not self.is_private_mode:
-            url_str = url.toString()
-            if url_str not in self.history:
-                self.history.append(url_str)
-                self.save_history()
+        if not self.is_private_mode and url not in self.history:
+            self.history.append(url)
+            self.save_history()
+            self.update_completer_model()  # Update suggestions
+
+    def add_bookmark(self):
+        current_url = self.tabs.currentWidget().url().toString()
+        if current_url not in self.bookmarks:
+            self.bookmarks.append(current_url)
+            self.save_bookmarks()
+            self.load_bookmarks_menu()
+            self.update_completer_model()
 
     def toggle_reader_mode(self):
         current_tab = self.tabs.currentWidget()
